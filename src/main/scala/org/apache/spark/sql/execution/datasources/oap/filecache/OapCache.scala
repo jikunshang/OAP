@@ -191,12 +191,47 @@ class SimpleOapCache extends OapCache with Logging {
   override def pendingFiberCount: Int = cacheGuardian.pendingFiberCount
 }
 
+class VMemCache extends OapCache with Logging {
+
+  override def get(fiber: FiberId): FiberCache = {
+    val fiberCache = cache(fiber)
+    incFiberCountAndSize(fiber, 1, fiberCache.size())
+    fiberCache.occupy()
+    decFiberCountAndSize(fiber, 1, fiberCache.size())
+    fiberCache
+  }
+
+  override def getIfPresent(fiber: FiberId): FiberCache = null
+
+  override def getFibers: Set[FiberId] = {
+    Set.empty
+  }
+
+  override def invalidate(fiber: FiberId): Unit = {}
+
+  override def invalidateAll(fibers: Iterable[FiberId]): Unit = {}
+
+  override def cacheSize: Long = 0
+
+  override def cacheStats: CacheStats = CacheStats()
+
+  override def cacheCount: Long = 0
+
+  override def pendingFiberCount: Int = 0
+
+  override def cleanUp: Unit = {
+    super.cleanUp
+  }
+}
+
+
 class GuavaOapCache(
     dataCacheMemory: Long,
     indexCacheMemory: Long,
     cacheGuardianMemory: Long,
     var indexDataSeparationEnable: Boolean)
     extends OapCache with Logging {
+
 
   // TODO: CacheGuardian can also track cache statistics periodically
   private val cacheGuardian = new CacheGuardian(cacheGuardianMemory)
