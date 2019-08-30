@@ -149,6 +149,7 @@ private[sql] object MemoryManager {
     memoryManagerOpt match {
       case "offheap" => new OffHeapMemoryManager(sparkEnv)
       case "pm" => new PersistentMemoryManager(sparkEnv)
+      case "hybrid" => new HybridMemoryManager(sparkEnv)
       case "mix" => if (indexDataSeparationEnable) {
         new MixMemoryManager(sparkEnv)
       } else {
@@ -365,7 +366,9 @@ private[filecache] class HybridMemoryManager(sparkEnv: SparkEnv)
     if (memoryUsed + size > dataCacheMemory) {
       dramMemoryManager.allocate(size)
     } else {
-      persistentMemoryManager.allocate(size)
+      val memBlock = persistentMemoryManager.allocate(size)
+      _memoryUsed.addAndGet(memBlock.occupiedSize)
+      memBlock
     }
   }
 

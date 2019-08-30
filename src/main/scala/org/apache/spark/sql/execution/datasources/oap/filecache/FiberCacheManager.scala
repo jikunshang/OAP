@@ -129,7 +129,7 @@ private[sql] class FiberCacheManager(
         indexDataSeparationEnable)
     } else if (cacheName.equals(SIMPLE_CACHE)) {
       new SimpleOapCache()
-    } else if (cacheName.equals(SIMPLE_CACHE)) {
+    } else if (cacheName.equals(NO_EVICT_CACHE)) {
       new NonEvictPMCache(20, memoryManager.dataCacheMemory,
         memoryManager.cacheGuardianMemory)
     } else {

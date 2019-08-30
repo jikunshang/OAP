@@ -89,6 +89,7 @@ class NonEvictPMCache(dramSize: Long,
   // We don't bother the memory use of Simple Cache
   private val cacheGuardian = new CacheGuardian(Int.MaxValue)
   private val _cacheSize: AtomicLong = new AtomicLong(0)
+  private val _cacheCount: AtomicLong = new AtomicLong(0)
 
   val cacheMap : ConcurrentHashMap[FiberId, FiberCache] = new ConcurrentHashMap[FiberId, FiberCache]
   cacheGuardian.start()
@@ -100,7 +101,8 @@ class NonEvictPMCache(dramSize: Long,
       if (cacheSize < pmSize) {
         val fiberCache = cache(fiber)
         incFiberCountAndSize(fiber, 1, fiberCache.size())
-        _cacheSize.addAndGet(1)
+        _cacheSize.addAndGet(fiberCache.size())
+        _cacheCount.addAndGet(1)
         fiberCache.occupy()
         fiberCache
       } else {
@@ -131,9 +133,9 @@ class NonEvictPMCache(dramSize: Long,
 
   override def invalidateAll(fibers: Iterable[FiberId]): Unit = {}
 
-  override def cacheSize: Long = {pmSize}
+  override def cacheSize: Long = {_cacheSize.get()}
 
-  override def cacheCount: Long = {_cacheSize.get()}
+  override def cacheCount: Long = {_cacheCount.get()}
 
   override def cacheStats: CacheStats = CacheStats()
 
