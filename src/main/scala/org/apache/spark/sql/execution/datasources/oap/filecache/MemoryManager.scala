@@ -145,7 +145,7 @@ private[sql] object MemoryManager {
       OapConf.OAP_INDEX_DATA_SEPARATION_ENABLE.defaultValue.get
     )
     val memoryManagerOpt =
-      conf.get(OapConf.OAP_FIBERCACHE_MEMORY_MANAGER.key, "offheap").toLowerCase
+      conf.get(OapConf.OAP_FIBERCACHE_MEMORY_MANAGER.key, "mix").toLowerCase
     memoryManagerOpt match {
       case "offheap" => new OffHeapMemoryManager(sparkEnv)
       case "pm" => new PersistentMemoryManager(sparkEnv)
@@ -315,6 +315,8 @@ private[filecache] class HybridMemoryManager(sparkEnv: SparkEnv)
 
   private val _memoryUsed = new AtomicLong(0)
 
+  private var memBlockInPM = scala.collection.mutable.Set[MemoryBlockHolder]()
+
   private val (_dataDRAMCacheSize, _dataPMCacheSize, _dramGuardianSize, _pmGuardianSize) = init()
 
   private def init(): (Long, Long, Long, Long) = {
@@ -363,17 +365,26 @@ private[filecache] class HybridMemoryManager(sparkEnv: SparkEnv)
   override def cacheGuardianMemory: Long = _dataPMCacheSize
 
   override private[filecache] def allocate(size: Long) = {
-    if (memoryUsed + size > dataCacheMemory) {
-      dramMemoryManager.allocate(size)
-    } else {
+    try {
       val memBlock = persistentMemoryManager.allocate(size)
       _memoryUsed.addAndGet(memBlock.occupiedSize)
+      memBlockInPM += memBlock
       memBlock
+    } catch {
+      case oom : OutOfMemoryError => dramMemoryManager.allocate(size)
+      case ex : Throwable => throw ex
     }
+
   }
 
   override private[filecache] def free(block: MemoryBlockHolder): Unit = {
-    throw new UnsupportedOperationException("Unsupported operation")
+    if (memBlockInPM.contains(block)) {
+      memBlockInPM.remove(block)
+      persistentMemoryManager.free(block)
+      _memoryUsed.addAndGet(-1 * block.occupiedSize)
+    } else {
+      dramMemoryManager.free(block)
+    }
   }
 }
 

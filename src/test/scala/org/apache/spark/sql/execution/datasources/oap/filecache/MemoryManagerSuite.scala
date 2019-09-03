@@ -167,4 +167,20 @@ class MemoryManagerSuite extends SharedOapContext {
         offset += length
     }
   }
+
+  test("test hybrid Memory manager") {
+    val totalMem = memoryManager.totalCacheMemory
+    var usedMem = 0
+    val allocateSizeOnce = 1024*1024*1024
+    // allocate until pm is full
+    while(usedMem + allocateSizeOnce < totalMem) {
+      val blockPM = memoryManager.allocate(allocateSizeOnce)
+      usedMem += blockPM.occupiedSize
+      assert("PM" == blockPM.source)
+    }
+    // now memory allocated will be DRAM
+    val blockDRAM = memoryManager.allocate(allocateSizeOnce)
+    assert("DRAM" == blockDRAM.source)
+
+  }
 }
