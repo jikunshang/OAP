@@ -145,7 +145,7 @@ private[sql] object MemoryManager {
       OapConf.OAP_INDEX_DATA_SEPARATION_ENABLE.defaultValue.get
     )
     val memoryManagerOpt =
-      conf.get(OapConf.OAP_FIBERCACHE_MEMORY_MANAGER.key, "mix").toLowerCase
+      conf.get(OapConf.OAP_FIBERCACHE_MEMORY_MANAGER.key, "offheap").toLowerCase
     memoryManagerOpt match {
       case "offheap" => new OffHeapMemoryManager(sparkEnv)
       case "pm" => new PersistentMemoryManager(sparkEnv)
