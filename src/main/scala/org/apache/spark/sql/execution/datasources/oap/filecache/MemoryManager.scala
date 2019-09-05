@@ -432,6 +432,10 @@ private[filecache] class MixMemoryManager(sparkEnv: SparkEnv)
     (indexManager, dataManager)
   }
 
+  override private[filecache] def allocate(size: Long) = {
+    throw new UnsupportedOperationException("Unsupported")
+  }
+
   override def toIndexFiberCache(in: FSDataInputStream, position: Long, length: Int): FiberCache = {
     indexMemoryManager.toIndexFiberCache(in, position, length).setMemBlockCacheType(CacheEnum.INDEX)
   }
@@ -468,9 +472,6 @@ private[filecache] class MixMemoryManager(sparkEnv: SparkEnv)
   override def cacheGuardianMemory: Long =
     indexMemoryManager.cacheGuardianMemory + dataMemoryManager.cacheGuardianMemory
 
-  override private[filecache] def allocate(size: Long) = {
-    throw new UnsupportedOperationException("Unsupported")
-  }
 }
 
 abstract class AllocationStrategy
