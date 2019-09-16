@@ -104,6 +104,7 @@ class NonEvictPMCache(dramSize: Long,
         _cacheSize.addAndGet(fiberCache.size())
         _cacheCount.addAndGet(1)
         fiberCache.occupy()
+        cacheMap.put(fiber, fiberCache)
         fiberCache
       } else {
         val fiberCache = cache(fiber)
@@ -129,9 +130,15 @@ class NonEvictPMCache(dramSize: Long,
     throw new RuntimeException("Unsupported")
   }
 
-  override def invalidate(fiber: FiberId): Unit = {}
+  override def invalidate(fiber: FiberId): Unit = {
+    if (cacheMap.contains(fiber)) {
+      cacheMap.remove(fiber)
+    }
+  }
 
-  override def invalidateAll(fibers: Iterable[FiberId]): Unit = {}
+  override def invalidateAll(fibers: Iterable[FiberId]): Unit = {
+    fibers.foreach(invalidate)
+  }
 
   override def cacheSize: Long = {_cacheSize.get()}
 
