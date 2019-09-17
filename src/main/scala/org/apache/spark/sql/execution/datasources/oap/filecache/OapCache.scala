@@ -96,7 +96,9 @@ class NonEvictPMCache(dramSize: Long,
 
   override def get(fiber: FiberId): FiberCache = {
     if (cacheMap.containsKey(fiber)) {
-      cacheMap.get(fiber)
+      val fiberCache = cacheMap.get(fiber)
+      fiberCache.occupy()
+      fiberCache
     } else {
       if (cacheSize < pmSize) {
         val fiberCache = cache(fiber)
@@ -127,7 +129,8 @@ class NonEvictPMCache(dramSize: Long,
   }
 
   override def getFibers: Set[FiberId] = {
-    throw new RuntimeException("Unsupported")
+    // throw new RuntimeException("Unsupported")
+    cacheMap.keySet().asScala.toSet
   }
 
   override def invalidate(fiber: FiberId): Unit = {
