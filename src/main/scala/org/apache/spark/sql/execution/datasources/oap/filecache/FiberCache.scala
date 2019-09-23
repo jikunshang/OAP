@@ -31,26 +31,7 @@ import org.apache.spark.sql.oap.OapRuntime
 import org.apache.spark.unsafe.Platform
 import org.apache.spark.unsafe.types.UTF8String
 
-trait FiberCacheTrait {
-  def release(): Unit
-
-  def getBoolean(offset: Long): Boolean
-
-  def getByte(offset: Long): Byte
-
-  def getInt(offset: Long): Int
-
-  def getDouble(offset: Long): Double
-
-  def getLong(offset: Long): Long
-
-  def getShort(offset: Long): Short
-
-  def getFloat(offset: Long): Float
-}
-
-case class FiberCache(fiberData: MemoryBlockHolder)
-  extends FiberCacheTrait with Logging {
+case class FiberCache(fiberData: MemoryBlockHolder) extends Logging {
 
   // This is and only is set in `cache() of OapCache`
   // TODO: make it immutable
@@ -179,47 +160,6 @@ case class FiberCache(fiberData: MemoryBlockHolder)
   def setMemBlockCacheType(cacheType: CacheEnum.CacheEnum): FiberCache = {
     this.fiberData.cacheType = cacheType
     this
-  }
-}
-
-/**
- *
- * @param fiberData
- */
-case class BytesFiberCache(bytes: Array[Byte])
-  extends FiberCacheTrait with Logging {
-
-  override def release(): Unit = {
-    throw new RuntimeException("Unsupported operation")
-  }
-
-  override def getBoolean(offset: Long): Boolean = {
-    throw new RuntimeException("Unsupported operation")
-  }
-
-  override def getByte(offset: Long): Byte = {
-    throw new RuntimeException("Unsupported operation")
-  }
-
-  override def getInt(offset: Long): Int = {
-    // FIXME why long here???
-    ByteBuffer.wrap(bytes).getInt(offset.asInstanceOf[Int])
-  }
-
-  override def getDouble(offset: Long): Double = {
-    throw new RuntimeException("Unsupported operation")
-  }
-
-  override def getLong(offset: Long): Long = {
-    throw new RuntimeException("Unsupported operation")
-  }
-
-  override def getShort(offset: Long): Short = {
-    throw new RuntimeException("Unsupported operation")
-  }
-
-  override def getFloat(offset: Long): Float = {
-    throw new RuntimeException("Unsupported operation")
   }
 }
 
