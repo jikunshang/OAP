@@ -60,7 +60,6 @@ private[oap] case class ParquetFiberDataLoader(
     // Notes: rowIds is IntegerType in oap index.
     val rowCount = reader.getFooter.getBlocks.get(blockId).getRowCount.toInt
 
-
     val columnDescriptor = requestedSchema.getColumns.get(0)
     val originalType = requestedSchema.asGroupType.getFields.get(0).getOriginalType
     val blockMetaData = footer.getBlocks.get(blockId)

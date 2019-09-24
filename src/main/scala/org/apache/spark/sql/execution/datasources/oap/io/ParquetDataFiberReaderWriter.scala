@@ -48,16 +48,27 @@ object ParquetDataFiberWriter extends Logging {
     header match {
       case ParquetDataFiberHeader(true, false, 0) =>
         val length = fiberLength(column, total, 0)
-        val dumpFunc = (memoryBlock: MemoryBlockHolder,
-                        onHeapColumnVector: OnHeapColumnVector,
-                        size: Int) => {
-          logDebug(s"will apply $length bytes off heap memory for data fiber.")
-          val fiber = FiberCache(memoryBlock)
-          val nativeAddress = header.writeToCache(fiber.getBaseOffset)
-          dumpDataToFiber(nativeAddress, column, total)
-          fiber
+        if (OapRuntime.getOrCreate.fiberCacheManager.isOnHeapMemoryBased) {
+          var dumpFunc = (memoryBlock: MemoryBlockHolder,
+           onHeapColumnVector: OnHeapColumnVector,
+           size: Int) => {
+            logDebug(s"will apply $length bytes off heap memory for data fiber.")
+            val fiber = FiberCache(memoryBlock)
+            val nativeAddress = header.writeToCache(fiber.getBaseOffset)
+            dumpDataToFiber(nativeAddress, column, total)
+            fiber
+          }
+          OapRuntime.getOrCreate.fiberCacheManager.dumpDataToCache(length, column, total, dumpFunc)
+        } else {
+          // TODO
+          var dumpFunc = (onHeapColumnVector: OnHeapColumnVector, size: Int) => {
+            var data = new Array[Byte](length.toInt)
+            getContentData(column, length.toInt, 6, data)
+            data
+          }
+          OapRuntime.getOrCreate.
+            fiberCacheManager.dumpDataToCache(length, column, total, dumpFunc)
         }
-        OapRuntime.getOrCreate.fiberCacheManager.dumpDataToCache(length, column, total, dumpFunc)
       case ParquetDataFiberHeader(true, false, dicLength) =>
         val length = fiberLength(column, total, 0, dicLength)
         val dumpFunc = (memoryBlock: MemoryBlockHolder,
@@ -313,6 +324,149 @@ object ParquetDataFiberWriter extends Logging {
 
   private def emptyDataFiber(fiberLength: Long): FiberCache =
     OapRuntime.getOrCreate.memoryManager.getEmptyDataFiberCache(fiberLength)
+
+  private def getContentData(column: OnHeapColumnVector, total: Int, offset: Int,
+                             data: Array[Byte]): Unit = {
+    column.dataType match {
+      case ByteType | BooleanType =>
+        System.arraycopy(column.getByteData.map(_.toByte), 0, data, offset,
+          column.getByteData.map(_.toByte).length)
+      case ShortType =>
+        System.arraycopy(column.getShortData.map(_.toByte), 0, data, offset,
+          column.getShortData.map(_.toByte).length)
+      case IntegerType | DateType =>
+        System.arraycopy(column.getIntData.map(_.toByte), 0, data, offset,
+          column.getIntData.map(_.toByte).length)
+      case FloatType =>
+        System.arraycopy(column.getFloatData.map(_.toByte), 0, data, offset,
+          column.getFloatData.map(_.toByte).length)
+      case LongType | TimestampType =>
+        System.arraycopy(column.getLongData.map(_.toByte), 0, data, offset,
+          column.getLongData.map(_.toByte).length)
+      case DoubleType =>
+        System.arraycopy(column.getDoubleData.map(_.toByte), 0, data, offset,
+          column.getDoubleData.map(_.toByte).length)
+      case StringType | BinaryType =>
+        val data1 = column.getArrayLengths.map(_.toByte)
+        val data2 = column.getArrayOffsets.map(_.toByte)
+        val child = column.getChild (0).asInstanceOf[OnHeapColumnVector]
+        val data3 = child.getByteData
+        // consolidate data into one bytes array
+        assert (data.length == data1.length + data2.length + data3.length + offset
+          , s"data size is not correct.")
+        System.arraycopy (data1, 0, data, offset, data1.length)
+        System.arraycopy (data2, 0, data, data1.length + offset, data2.length)
+        System.arraycopy (data3, 0, data, data1.length + data2.length + offset, data3.length)
+      case other if DecimalType.is32BitDecimalType (other) =>
+        System.arraycopy(column.getIntData.map(_.toByte), 0, data, offset,
+          column.getIntData.map(_.toByte).length)
+      case other if DecimalType.is64BitDecimalType (other) =>
+        System.arraycopy(column.getLongData.map(_.toByte), 0, data, offset,
+          column.getLongData.map(_.toByte).length)
+      case other if DecimalType.isByteArrayDecimalType (other) =>
+        val data1 = column.getArrayLengths.map(_.toByte)
+        val data2 = column.getArrayOffsets.map(_.toByte)
+        val child = column.getChild (0).asInstanceOf[OnHeapColumnVector]
+        val data3 = child.getByteData
+        // consolidate data into one bytes array
+        assert (data.length == data1.length + data2.length + data3.length + offset
+          , s"data size is not correct.")
+        System.arraycopy (data1, 0, data, offset, data1.length)
+        System.arraycopy (data2, 0, data, data1.length + offset, data2.length)
+        System.arraycopy (data3, 0, data, data1.length + data2.length + offset, data3.length)
+      // data = concat[Byte](data1, data2)
+      case other => throw new OapException (s"$other data type is not support data cache.")
+    }
+  }
+  private def getContentDicData(column: OnHeapColumnVector, total: Int, dicLength: Int,
+                                offset: Int, data: Array[Byte]): Unit = {
+    // dump dictionaryIds to data fiber, it's a int array.
+    val dictionaryIds = column.getDictionaryIds.asInstanceOf[OnHeapColumnVector]
+    val dictionaryIdsData = dictionaryIds.getIntData.map(_.toByte)
+    System.arraycopy (dictionaryIdsData, 0, data, offset, dictionaryIdsData.length)
+    val dictionary = column.getDictionary
+    // dump dictionary to data fiber case by dataType.
+    column.dataType() match {
+      case ByteType | ShortType | IntegerType | DateType =>
+        val intDictionaryContent = new Array[Int](dicLength)
+        (0 until dicLength).foreach(id => intDictionaryContent(id) = dictionary.decodeToInt(id))
+        System.arraycopy (intDictionaryContent.map(_.toByte), 0, data,
+          dictionaryIdsData.length + offset, dicLength * 4)
+      case FloatType =>
+        val floatDictionaryContent = new Array[Float](dicLength)
+        (0 until dicLength).foreach(id => floatDictionaryContent(id) = dictionary.decodeToFloat(id))
+        System.arraycopy (floatDictionaryContent.map(_.toByte), 0, data,
+          dictionaryIdsData.length + offset, dicLength * 4)
+      case LongType | TimestampType =>
+        val longDictionaryContent = new Array[Long](dicLength)
+        (0 until dicLength).foreach(id => longDictionaryContent(id) = dictionary.decodeToLong(id))
+        System.arraycopy (longDictionaryContent.map(_.toByte), 0, data,
+          dictionaryIdsData.length + offset, dicLength * 8)
+      case DoubleType =>
+        val doubleDictionaryContent = new Array[Double](dicLength)
+        (0 until dicLength).foreach(id =>
+          doubleDictionaryContent(id) = dictionary.decodeToDouble(id))
+        System.arraycopy (doubleDictionaryContent.map(_.toByte), 0, data,
+          dictionaryIdsData.length + offset, dicLength * 8)
+      case StringType | BinaryType =>
+        var baseOffset = dictionaryIdsData.length + offset
+        var binaryOffset = baseOffset + 4 * dicLength
+        (0 until dicLength).foreach( id => {
+          val binary = dictionary.decodeToBinary(id)
+          val length = binary.length
+          System.arraycopy (null, 0, data,
+            baseOffset, length)
+          baseOffset += 4
+          System.arraycopy (binary, 0, data,
+            binaryOffset, length)
+          binaryOffset += length
+          /*        var bytesNativeAddress = dicNativeAddress + 4L * dicLength
+                    Platform.putInt(null, dicNativeAddress, length)
+                    dicNativeAddress += 4
+                    Platform.copyMemory(binary,
+                      Platform.BYTE_ARRAY_OFFSET, null, bytesNativeAddress, length)
+                    bytesNativeAddress += length */
+        })
+      case other if DecimalType.is32BitDecimalType(other) =>
+        val intDictionaryContent = new Array[Int](dicLength)
+        (0 until dicLength).foreach(id => intDictionaryContent(id) = dictionary.decodeToInt(id))
+        System.arraycopy (intDictionaryContent.map(_.toByte), 0, data,
+          dictionaryIdsData.length + offset, dicLength * 4)
+      /*       Platform.copyMemory(intDictionaryContent, Platform.INT_ARRAY_OFFSET, null,
+               dicNativeAddress, dicLength * 4L) */
+      case other if DecimalType.is64BitDecimalType(other) =>
+        val longDictionaryContent = new Array[Long](dicLength)
+        (0 until dicLength).foreach(id => longDictionaryContent(id) = dictionary.decodeToLong(id))
+        System.arraycopy (longDictionaryContent.map(_.toByte), 0, data,
+          dictionaryIdsData.length + offset, dicLength * 8)
+      /*        Platform.copyMemory(longDictionaryContent, Platform.LONG_ARRAY_OFFSET, null,
+                dicNativeAddress, dicLength * 8L) */
+      case other if DecimalType.isByteArrayDecimalType(other) =>
+        var baseOffset = dictionaryIdsData.length + offset
+        var binaryOffset = baseOffset + 4 * dicLength
+        (0 until dicLength).foreach( id => {
+          val binary = dictionary.decodeToBinary(id)
+          val length = binary.length
+          System.arraycopy (null, 0, data,
+            baseOffset, length)
+          baseOffset += 4
+          System.arraycopy (binary, 0, data,
+            binaryOffset, length)
+          binaryOffset += length
+        })
+      /*        var bytesNativeAddress = dicNativeAddress + 4L * dicLength
+              (0 until dicLength).foreach( id => {
+                val binary = dictionary.decodeToBinary(id)
+                val length = binary.length
+                Platform.putInt(null, dicNativeAddress, length)
+                dicNativeAddress += 4
+                Platform.copyMemory(binary,
+                  Platform.BYTE_ARRAY_OFFSET, null, bytesNativeAddress, length)
+                bytesNativeAddress += length
+              }) */
+      case other => throw new OapException(s"$other data type is not support dictionary.")
+    }
+  }
 }
 
 /**

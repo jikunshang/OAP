@@ -109,6 +109,8 @@ trait CacheManager {
     total: Int,
     dumpToCacheFunc: (OnHeapColumnVector, Int) => Array[Byte]
   ): FiberCache
+
+  def isOnHeapMemoryBased: Boolean
 }
 
 private[sql] class VmemcacheManager(
@@ -130,6 +132,8 @@ private[sql] class VmemcacheManager(
       Int
     ) => Array[Byte]
   ): FiberCache = { throw new RuntimeException("Unsupported operation") }
+
+  override def isOnHeapMemoryBased: Boolean = true
 }
 
 private[sql] class FiberCacheManager(
@@ -275,6 +279,8 @@ private[sql] class FiberCacheManager(
     total: Int,
     dumpToCacheFunc: (OnHeapColumnVector, Int) => Array[Byte]
   ): FiberCache = { throw new RuntimeException("Unsupported Operation") }
+
+  override def isOnHeapMemoryBased: Boolean = false
 }
 
 private[sql] class DataFileMetaCacheManager extends Logging {
