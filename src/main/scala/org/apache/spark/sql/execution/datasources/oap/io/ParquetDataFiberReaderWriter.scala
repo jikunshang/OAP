@@ -42,6 +42,19 @@ import org.apache.spark.unsafe.Platform
 object ParquetDataFiberWriter extends Logging {
 
   def dumpToCache(column: OnHeapColumnVector, total: Int): FiberCache = {
+    dumpToCache(column, total, None)
+  }
+
+  /**
+   * Used by on heap cache
+   * @param column
+   * @param total
+   * @param fiberID
+   * @return
+   */
+  def dumpToCache(column: OnHeapColumnVector,
+                  total: Int,
+                  fiberID: Option[ParquetDataFile]): FiberCache = {
     val header = ParquetDataFiberHeader(column, total)
     logDebug(s"will dump column to data fiber dataType = ${column.dataType()}, " +
       s"total = $total, header is $header")
@@ -61,13 +74,20 @@ object ParquetDataFiberWriter extends Logging {
           OapRuntime.getOrCreate.fiberCacheManager.dumpDataToCache(length, column, total, dumpFunc)
         } else {
           // TODO
-          var dumpFunc = (onHeapColumnVector: OnHeapColumnVector, size: Int) => {
+          var dumpFunc = (fiberID: ParquetDataFile,
+           onHeapColumnVector: OnHeapColumnVector,
+                          size: Int) => {
             var data = new Array[Byte](length.toInt)
             getContentData(column, length.toInt, 6, data)
             data
           }
-          OapRuntime.getOrCreate.
-            fiberCacheManager.dumpDataToCache(length, column, total, dumpFunc)
+          OapRuntime.getOrCreate.fiberCacheManager.dumpDataToCache(
+            fiberID.get,
+            length,
+            column,
+            total,
+            dumpFunc
+          )
         }
       case ParquetDataFiberHeader(true, false, dicLength) =>
         val length = fiberLength(column, total, 0, dicLength)

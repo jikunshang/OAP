@@ -104,10 +104,11 @@ trait CacheManager {
   ): FiberCache
 
   def dumpDataToCache(
+    fiberID: ParquetDataFile,
     length: Long,
     vector: OnHeapColumnVector,
     total: Int,
-    dumpToCacheFunc: (OnHeapColumnVector, Int) => Array[Byte]
+    dumpToCacheFunc: (ParquetDataFile, OnHeapColumnVector, Int) => Array[Byte]
   ): FiberCache
 
   def isOnHeapMemoryBased: Boolean
@@ -124,13 +125,11 @@ private[sql] class VmemcacheManager(
   ): FiberCache = { throw new RuntimeException("Unsupported operation") }
 
   override def dumpDataToCache(
+    fiberID: ParquetDataFile,
     length: Long,
     vector: OnHeapColumnVector,
     total: Int,
-    dumpToCacheFunc: (
-      OnHeapColumnVector,
-      Int
-    ) => Array[Byte]
+    dumpToCacheFunc: (ParquetDataFile, OnHeapColumnVector, Int) => Array[Byte]
   ): FiberCache = { throw new RuntimeException("Unsupported operation") }
 
   override def isOnHeapMemoryBased: Boolean = true
@@ -274,10 +273,11 @@ private[sql] class FiberCacheManager(
   }
 
   override def dumpDataToCache(
+    fiberID: ParquetDataFile,
     length: Long,
     vector: OnHeapColumnVector,
     total: Int,
-    dumpToCacheFunc: (OnHeapColumnVector, Int) => Array[Byte]
+    dumpToCacheFunc: (ParquetDataFile, OnHeapColumnVector, Int) => Array[Byte]
   ): FiberCache = { throw new RuntimeException("Unsupported Operation") }
 
   override def isOnHeapMemoryBased: Boolean = false

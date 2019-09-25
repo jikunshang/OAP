@@ -41,7 +41,8 @@ import org.apache.spark.sql.types._
 private[oap] case class ParquetFiberDataLoader(
     configuration: Configuration,
     reader: ParquetFiberDataReader,
-    blockId: Int) {
+    blockId: Int,
+    file: Option[ParquetDataFile]) {
 
   @throws[IOException]
   def loadSingleColumn: FiberCache = {
@@ -75,7 +76,10 @@ private[oap] case class ParquetFiberDataLoader(
       val column = new OnHeapColumnVector(rowCount, dataType)
       columnReader.readBatch(rowCount, column)
       ParquetDataFiberWriter.dumpToCache(
-        column.asInstanceOf[OnHeapColumnVector], rowCount)
+        column.asInstanceOf[OnHeapColumnVector],
+        rowCount,
+        file
+      )
     }
   }
 }
