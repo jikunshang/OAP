@@ -23,6 +23,9 @@ import scala.collection.JavaConverters._
 
 import com.google.common.cache._
 
+import org.apache.arrow.plasma
+import org.apache.arrow.plasma.PlasmaClient
+
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.execution.datasources.OapException
 import org.apache.spark.sql.oap.OapRuntime
@@ -351,5 +354,62 @@ class GuavaOapCache(
       indexCacheInstance = initLoadingCache(INDEX_MAX_WEIGHT)
     }
     generalCacheInstance = null
+  }
+}
+
+class ExternalCache extends OapCache with Logging {
+  val plasmaClient = new PlasmaClient("socketname", "", -1)
+
+  private val _cacheSize: AtomicLong = new AtomicLong(0)
+
+
+  override def get(fiber: FiberId): FiberCache = {
+    val objectId = fiber.toString.getBytes()
+    if(plasmaClient.contains(objectId)) {
+      val fiberCache = plasmaClient.get(objectId, -1, false)
+    } else {
+      // memory manager createEmptyFiberCache
+      // plasma have a get API return a onheap byte[],but it's not zero-copy.
+      val fiberCache = cache(fiber)
+    }
+    throw new OapException("unsupported method")
+  }
+
+  override def getIfPresent(fiber: FiberId): FiberCache = {
+    throw new OapException("unsupported method")
+  }
+
+  override def getFibers: Set[FiberId] = {
+    throw new OapException("unsupported method")
+  }
+
+  override def invalidate(fiber: FiberId): Unit = {
+    throw new OapException("unsupported method")
+  }
+
+  override def invalidateAll(fibers: Iterable[FiberId]): Unit = {
+    throw new OapException("unsupported method")
+  }
+
+  override def cacheSize: Long = _cacheSize.get()
+
+  override def cacheCount: Long = {
+    throw new OapException("unsupported method")
+  }
+
+  override def cacheStats: CacheStats = {
+    throw new OapException("unsupported method")
+  }
+
+  override def pendingFiberCount: Int = {
+    throw new OapException("unsupported method")
+  }
+
+  override def cleanUp(): Unit = {
+    invalidateAll(getFibers)
+    dataFiberSize.set(0L)
+    dataFiberCount.set(0L)
+    indexFiberSize.set(0L)
+    indexFiberCount.set(0L)
   }
 }
