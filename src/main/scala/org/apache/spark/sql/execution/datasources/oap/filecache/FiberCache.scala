@@ -17,11 +17,13 @@
 
 package org.apache.spark.sql.execution.datasources.oap.filecache
 
+import java.nio.ByteBuffer
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 
-import com.google.common.primitives.Ints
 import scala.collection.mutable
+
+import com.google.common.primitives.Ints
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.execution.datasources.OapException

@@ -148,18 +148,74 @@ private[sql] object MemoryManager {
     )
     val memoryManagerOpt =
       conf.get(OapConf.OAP_FIBERCACHE_MEMORY_MANAGER.key, "offheap").toLowerCase
-    memoryManagerOpt match {
-      case "offheap" => new OffHeapMemoryManager(sparkEnv)
-      case "pm" => new PersistentMemoryManager(sparkEnv)
-      case "mix" => if (indexDataSeparationEnable) {
-        new MixMemoryManager(sparkEnv)
-      } else {
-        throw new UnsupportedOperationException("In order to enable MixMemoryManager," +
-          "you need to set to spark.sql.oap.index.data.cache.separation.enable to true")
+
+    val cacheName = sparkEnv.conf.get("spark.oap.cache.strategy", "offheap")
+    if ("vmemcache".equals(cacheName)) {
+      new DelegateMemoryManager(sparkEnv, memoryManagerOpt)
+    } else {
+      memoryManagerOpt match {
+        case "offheap" => new OffHeapMemoryManager(sparkEnv)
+        case "pm" => new PersistentMemoryManager(sparkEnv)
+        case "mix" => if (indexDataSeparationEnable) {
+          new MixMemoryManager(sparkEnv)
+        } else {
+          throw new UnsupportedOperationException("In order to enable MixMemoryManager," +
+            "you need to set to spark.sql.oap.index.data.cache.separation.enable to true")
+        }
+        case _ => throw new UnsupportedOperationException(
+          s"The memory manager: ${memoryManagerOpt} is not supported now")
       }
-      case _ => throw new UnsupportedOperationException(
-        s"The memory manager: ${memoryManagerOpt} is not supported now")
     }
+  }
+}
+
+/**
+ * DelegateMemoryManager will be used for Vmemcache
+ * since it uses self-managed memory.
+ */
+private[filecache] class DelegateMemoryManager(sparkEnv: SparkEnv, dramType: String)
+  extends MemoryManager with Logging {
+
+  /**
+   * Return the total memory used until now.
+   */
+  override def memoryUsed: Long = {
+    throw new RuntimeException("Unsupported operation")
+  }
+
+  /**
+   * The memory size used for index cache.
+   */
+  override def indexCacheMemory: Long = {
+    throw new RuntimeException("Unsupported operation")
+  }
+
+  /**
+   * The memory size used for data cache.
+   */
+  override def dataCacheMemory: Long = {
+    throw new RuntimeException("Unsupported operation")
+  }
+
+  /**
+   * The memory size used for cache guardian.
+   */
+  override def cacheGuardianMemory: Long = {
+    throw new RuntimeException("Unsupported operation")
+  }
+
+  /**
+   * Allocate a block of memory with given size. The actual occupied size of memory maybe different
+   * with the requested size, that's depends on the underlying implementation.
+   *
+   * @param size requested size of memory block
+   */
+  override private[filecache] def allocate(size: Long) = {
+    throw new RuntimeException("Unsupported operation")
+  }
+
+  override private[filecache] def free(block: MemoryBlockHolder): Unit = {
+    throw new RuntimeException("Unsupported operation")
   }
 }
 

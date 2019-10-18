@@ -93,12 +93,11 @@ private[oap] case class ParquetDataFile(
       fiberDataReader =
         ParquetFiberDataReader.open(configuration, file, meta.footer.toParquetMetadata)
     }
-
     val conf = new Configuration(configuration)
     // setting required column to conf enables us to
     // Vectorized read & cache certain(not all) columns
     addRequestSchemaToConf(conf, Array(fiberId))
-    ParquetFiberDataLoader(conf, fiberDataReader, groupId).loadSingleColumn
+    ParquetFiberDataLoader(conf, fiberDataReader, groupId, Option.apply(this)).loadSingleColumn
   }
 
   def iterator(
