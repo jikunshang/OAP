@@ -199,6 +199,14 @@ object OapConf {
       .stringConf
       .createWithDefault("0b")
 
+  val OAP_FIBERCACHE_EXTERNAL_STORE_PATH =
+    SqlConfAdapter.buildConf("spark.sql.oap.fiberCache.store.path")
+      .internal()
+      .doc("Used to set external store path for plasma. It's a Unix Socket which plasma server " +
+        "will listen")
+      .stringConf
+      .createWithDefault("/tmp/plasmaStore")
+
   val OAP_CACHE_FIBERSENSOR_GETHOSTS_NUM =
     SqlConfAdapter.buildConf("spark.sql.oap.cache.fiberSensor.getHostsNum")
       .internal()

@@ -20,14 +20,13 @@ package org.apache.spark.sql.execution.datasources.oap.filecache
 import java.util.concurrent.atomic.AtomicLong
 
 import scala.collection.JavaConverters._
-
 import com.google.common.cache._
-
 import org.apache.arrow.plasma
 import org.apache.arrow.plasma.PlasmaClient
-
+import org.apache.spark.SparkEnv
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.execution.datasources.OapException
+import org.apache.spark.sql.internal.oap.OapConf
 import org.apache.spark.sql.oap.OapRuntime
 import org.apache.spark.util.Utils
 
@@ -38,6 +37,7 @@ trait OapCache {
   val indexFiberCount: AtomicLong = new AtomicLong(0)
 
   def get(fiber: FiberId): FiberCache
+  def put(fiber: FiberId, data: Array[Byte])
   def getIfPresent(fiber: FiberId): FiberCache
   def getFibers: Set[FiberId]
   def invalidate(fiber: FiberId): Unit
@@ -72,7 +72,7 @@ trait OapCache {
 
   protected def cache(fiber: FiberId): FiberCache = {
     val cache = fiber match {
-      case DataFiberId(file, columnIndex, rowGroupId) => file.cache(rowGroupId, columnIndex)
+      case DataFiberId(file, columnIndex, rowGroupId) => file.cache(rowGroupId, columnIndex, fiber)
       case BTreeFiberId(getFiberData, _, _, _) => getFiberData.apply()
       case BitmapFiberId(getFiberData, _, _, _) => getFiberData.apply()
       case TestDataFiberId(getFiberData, _) => getFiberData.apply()
@@ -99,6 +99,10 @@ class SimpleOapCache extends OapCache with Logging {
     cacheGuardian.addRemovalFiber(fiberId, fiberCache)
     decFiberCountAndSize(fiberId, 1, fiberCache.size())
     fiberCache
+  }
+
+  override def put(fiber: FiberId, data: Array[Byte]): Unit = {
+    throw new OapException("unsupported method")
   }
 
   override def getIfPresent(fiber: FiberId): FiberCache = null
@@ -241,7 +245,9 @@ class GuavaOapCache(
       readLock.unlock()
     }
   }
-
+  override def put(fiber: FiberId, data: Array[Byte]): Unit = {
+    throw new OapException("unsupported method")
+  }
   override def getIfPresent(fiber: FiberId): FiberCache =
     if (indexDataSeparationEnable) {
       if (fiber.isInstanceOf[DataFiberId] || fiber.isInstanceOf[TestDataFiberId]) {
@@ -358,22 +364,43 @@ class GuavaOapCache(
 }
 
 class ExternalCache extends OapCache with Logging {
-  val plasmaClient = new PlasmaClient("socketname", "", -1)
-
-  private val _cacheSize: AtomicLong = new AtomicLong(0)
-
+  private val conf = SparkEnv.get.conf
+  private val externalStoreCacheSocket: String =
+    conf.get(OapConf.OAP_FIBERCACHE_EXTERNAL_STORE_PATH.key, "/tmp/plasmaStore")
+  val plasmaClient = new PlasmaClient(externalStoreCacheSocket, "", -1)
+  val cacheGuardian = new CacheGuardian(10000000000L)
+  logDebug("plasma client start")
 
   override def get(fiber: FiberId): FiberCache = {
     val objectId = fiber.toString.getBytes()
+
     if(plasmaClient.contains(objectId)) {
-      val fiberCache = plasmaClient.get(objectId, -1, false)
+      val fiberCache = FiberCache( plasmaClient.get(objectId, -1, false))
+      fiberCache.occupy()
+      // cacheGuardian will call realDispose in the end, but in externalCache
+      // realDispose will wrapping plasma.release(), so it won't free a plasma object.
+      // Plasma server will hold all object and do lru evict. So problem now is how to
+      // maintain a plasma client which ExternalCache(get), memmoryManager(put) and
+      // dumpToCache(release) could reference.
+      cacheGuardian.addRemovalFiber(fiber, fiberCache)
+      fiberCache
     } else {
       // memory manager createEmptyFiberCache
       // plasma have a get API return a onheap byte[],but it's not zero-copy.
       val fiberCache = cache(fiber)
+      fiberCache.occupy()
+      cacheGuardian.addRemovalFiber(fiber, fiberCache)
+      fiberCache
     }
-    throw new OapException("unsupported method")
+//    throw new OapException("unsupported method")
   }
+
+  override def put(fiber: FiberId, data: Array[Byte]): Unit = {
+    val objectId = fiber.toString.getBytes()
+    plasmaClient.put(objectId, data, null)
+  }
+
+  private val _cacheSize: AtomicLong = new AtomicLong(0)
 
   override def getIfPresent(fiber: FiberId): FiberCache = {
     throw new OapException("unsupported method")

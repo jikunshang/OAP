@@ -92,7 +92,7 @@ private[oap] case class OapDataFileV1(
     }
   }
 
-  def cache(groupId: Int, fiberId: Int): FiberCache = {
+  def cache(groupId: Int, columnIndex: Int, fiberId: FiberId): FiberCache = {
     val groupMeta = meta.rowGroupsMeta(groupId)
     val decompressor: BytesDecompressor = codecFactory.getDecompressor(meta.codec)
 
@@ -100,13 +100,13 @@ private[oap] case class OapDataFileV1(
     // TODO: update the meta to store the fiber start pos
     var i = 0
     var fiberStart = groupMeta.start
-    while (i < fiberId) {
+    while (i < columnIndex) {
       fiberStart += groupMeta.fiberLens(i)
       i += 1
     }
-    val len = groupMeta.fiberLens(fiberId)
-    val uncompressedLen = groupMeta.fiberUncompressedLens(fiberId)
-    val encoding = meta.columnsMeta(fiberId).encoding
+    val len = groupMeta.fiberLens(columnIndex)
+    val uncompressedLen = groupMeta.fiberUncompressedLens(columnIndex)
+    val encoding = meta.columnsMeta(columnIndex).encoding
 
     val bytes = new Array[Byte](len)
 
@@ -117,8 +117,8 @@ private[oap] case class OapDataFileV1(
       is.readFully(bytes)
     }
 
-    val dataType = schema(fiberId).dataType
-    val dictionary = getDictionary(fiberId)
+    val dataType = schema(columnIndex).dataType
+    val dictionary = getDictionary(columnIndex)
     val fiberParser =
       if (dictionary != null) {
         DictionaryBasedDataFiberParser(encoding, meta, dictionary, dataType)

@@ -17,13 +17,13 @@
 
 package org.apache.spark.sql.execution.datasources.oap.io
 
+import org.apache.arrow.plasma.PlasmaClient
 import org.apache.parquet.column.{Dictionary, Encoding}
 import org.apache.parquet.io.api.Binary
 import org.apache.parquet.it.unimi.dsi.fastutil.ints.IntList
-
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.execution.datasources.OapException
-import org.apache.spark.sql.execution.datasources.oap.filecache.{FiberCache, MemoryBlockHolder}
+import org.apache.spark.sql.execution.datasources.oap.filecache.{FiberCache, FiberId, MemoryBlockHolder}
 import org.apache.spark.sql.execution.datasources.parquet.ParquetDictionaryWrapper
 import org.apache.spark.sql.execution.vectorized.OnHeapColumnVector
 import org.apache.spark.sql.oap.OapRuntime
@@ -44,6 +44,29 @@ object ParquetDataFiberWriter extends Logging {
   def dumpToCache(column: OnHeapColumnVector, total: Int): FiberCache = {
     dumpToCache(column, total, None)
   }
+
+  /**
+   * Used by on heap cache
+   * @param column
+   * @param total
+   * @param fiberID
+   * @return
+   */
+  def dumpToCache(column: OnHeapColumnVector,
+                  total: Int,
+                  fiberID: Option[ParquetDataFile],
+                  fiberId: FiberId): FiberCache = {
+    val totalSize = 100
+    var data = new Array[Byte](totalSize.toInt)
+    // construct this data from parquet file balabala
+    // put this data into plasma
+    val plasmaClient = new PlasmaClient("", "", 0 )
+    plasmaClient.put(fiberId.toString.getBytes(), data, null)
+    FiberCache(data)
+
+    throw new OapException("unsupport")
+  }
+
 
   /**
    * Used by on heap cache

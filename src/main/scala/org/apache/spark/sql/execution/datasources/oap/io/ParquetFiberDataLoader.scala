@@ -24,7 +24,7 @@ import org.apache.parquet.hadoop.ParquetFiberDataReader
 import org.apache.parquet.hadoop.api.InitContext
 import org.apache.parquet.hadoop.utils.Collections3
 
-import org.apache.spark.sql.execution.datasources.oap.filecache.FiberCache
+import org.apache.spark.sql.execution.datasources.oap.filecache.{FiberCache, FiberId}
 import org.apache.spark.sql.execution.datasources.parquet.{ParquetReadSupportWrapper, VectorizedColumnReader}
 import org.apache.spark.sql.execution.vectorized.OnHeapColumnVector
 import org.apache.spark.sql.oap.OapRuntime
@@ -37,12 +37,13 @@ import org.apache.spark.sql.types._
  * @param configuration hadoop configuration
  * @param reader which holds the inputstream at the life cycle of the cache load.
  * @param blockId represents which block will be load.
+ * @param fiberId identify fiberCache
   */
-private[oap] case class ParquetFiberDataLoader(
-    configuration: Configuration,
-    reader: ParquetFiberDataReader,
-    blockId: Int,
-    file: Option[ParquetDataFile]) {
+private[oap] case class ParquetFiberDataLoader(configuration: Configuration,
+                                               reader: ParquetFiberDataReader,
+                                               blockId: Int,
+                                               fiberId: FiberId,
+                                               file: Option[ParquetDataFile]) {
 
   @throws[IOException]
   def loadSingleColumn: FiberCache = {
@@ -73,13 +74,22 @@ private[oap] case class ParquetFiberDataLoader(
       ParquetDataFiberCompressedWriter.dumpToCache(
         columnReader, rowCount, dataType)
     } else {
+      // if current cachce backend is on-heap(vmemcache), use parquet vmemcache writer
+      if (OapRuntime.getOrCreate.fiberCacheManager.isOnHeapMemoryBased) {
+        // todo:implement detail code
+        val length = 100
+        val data = new Array[Byte](length)
+        // dumpData(column, rowCount, file, data)
+        OapRuntime.getOrCreate.fiberCacheManager.put(fiberId, data)
+        FiberCache(data)
+      } else {
       val column = new OnHeapColumnVector(rowCount, dataType)
       columnReader.readBatch(rowCount, column)
       ParquetDataFiberWriter.dumpToCache(
         column.asInstanceOf[OnHeapColumnVector],
         rowCount,
         file
-      )
+      )}
     }
   }
 }

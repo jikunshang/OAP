@@ -170,6 +170,50 @@ private[sql] object MemoryManager {
 }
 
 /**
+ * ExternalMemoryManager will be used for externalCache
+ * since it uses self-managed memory.
+ */
+private[filecache] class ExternalMemoryManager(sparkEnv: SparkEnv)
+  extends MemoryManager with Logging {
+  /**
+   * Return the total memory used until now.
+   */
+  override def memoryUsed: Long = {
+    throw new RuntimeException("Unsupported operation")
+  }
+
+  /**
+   * The memory size used for index cache.
+   */
+  override def indexCacheMemory: Long = {
+    throw new RuntimeException("Unsupported operation")
+  }
+
+  /**
+   * The memory size used for data cache.
+   */
+  override def dataCacheMemory: Long = {
+    throw new RuntimeException("Unsupported operation")
+  }
+
+  /**
+   * The memory size used for cache guardian.
+   */
+  override def cacheGuardianMemory: Long = {
+    throw new RuntimeException("Unsupported operation")
+  }
+
+  override private[filecache] def allocate(size: Long) = {
+    // plasmaClient.put()
+    throw new RuntimeException("Unsupported operation")
+  }
+
+  override private[filecache] def free(block: MemoryBlockHolder): Unit = {
+    throw new RuntimeException("Unsupported operation")
+  }
+}
+
+/**
  * DelegateMemoryManager will be used for Vmemcache
  * since it uses self-managed memory.
  */
@@ -448,3 +492,5 @@ private[filecache] class MixMemoryManager(sparkEnv: SparkEnv)
   override def cacheGuardianMemory: Long =
     indexMemoryManager.cacheGuardianMemory + dataMemoryManager.cacheGuardianMemory
 }
+
+

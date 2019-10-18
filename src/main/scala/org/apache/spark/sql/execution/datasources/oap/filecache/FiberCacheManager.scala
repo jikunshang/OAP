@@ -184,6 +184,11 @@ private[sql] class FiberCacheManager(
     logDebug(s"Getting Fiber: $fiber")
     cacheBackend.get(fiber)
   }
+
+  def put(fiber: FiberId, data: Array[Byte]): Unit = {
+    cacheBackend.put(fiber: FiberId, data: Array[Byte])
+  }
+
   // only for unit test
   def setCompressionConf(dataEnable: Boolean = false,
       dataCompressCodec: String = "SNAPPY"): Unit = {
