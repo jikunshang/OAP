@@ -52,21 +52,43 @@ object ParquetDataFiberWriter extends Logging {
    * @param fiberID
    * @return
    */
-  def dumpToCache(column: OnHeapColumnVector,
+  def dumpToOnHeapCache(column: OnHeapColumnVector,
                   total: Int,
                   fiberID: Option[ParquetDataFile],
                   fiberId: FiberId): FiberCache = {
-    val totalSize = 100
-    var data = new Array[Byte](totalSize.toInt)
-    // construct this data from parquet file balabala
-    // put this data into plasma
-    val plasmaClient = new PlasmaClient("", "", 0 )
-    plasmaClient.put(fiberId.toString.getBytes(), data, null)
-    FiberCache(data)
+//    val totalSize = 100
+//    var data = new Array[Byte](totalSize.toInt)
+//    // construct this data from parquet file balabala
+//    // put this data into plasma
+//    val plasmaClient = new PlasmaClient("", "", 0 )
+//    plasmaClient.put(fiberId.toString.getBytes(), data, null)
+//    FiberCache(data)
+
+    val header = ParquetDataFiberHeader(column, total)
+    logDebug(s"will dump column to data fiber dataType = ${column.dataType()}, " +
+      s"total = $total, header is $header")
+    header match {
+      case ParquetDataFiberHeader(true, false, 0) =>
+        val length = fiberLength(column, total, 0)
+        val dumpFunc = ( column: OnHeapColumnVector,
+                         rowCount: Int) => {
+          val data = new Array[Byte](length.toInt)
+          getContentData(column, rowCount, ParquetDataFiberHeader.defaultSize, data)
+          data
+        }
+        OapRuntime.getOrCreate.fiberCacheManager.dumpDataToCache(
+          length, column, total, fiberId, dumpFunc)
+      case ParquetDataFiberHeader(true, false, dicLength) =>
+        throw new OapException("unsupported")
+      case ParquetDataFiberHeader(false, true, _) =>
+      case ParquetDataFiberHeader(false, false, 0) =>
+      case ParquetDataFiberHeader(false, false, dicLength) =>
+      case ParquetDataFiberHeader(true, true, _) =>
+      case other => throw new OapException(s"impossible header status $other.")
+    }
 
     throw new OapException("unsupport")
   }
-
 
   /**
    * Used by on heap cache

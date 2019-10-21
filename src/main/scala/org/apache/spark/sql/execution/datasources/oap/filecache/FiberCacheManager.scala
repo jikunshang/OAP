@@ -277,6 +277,19 @@ private[sql] class FiberCacheManager(
     dumpToCacheFunc(memoryManager.allocate(length), vector, total)
   }
 
+  def dumpDataToCache(
+  length: Long,
+  vector: OnHeapColumnVector,
+  total: Int,
+  fiberId: FiberId,
+  dumpToCacheFunc: ( OnHeapColumnVector, Int) => Array[Byte]
+  ): FiberCache = {
+    val data = dumpToCacheFunc(vector, total)
+
+    cacheBackend.put(fiberId, data)
+    FiberCache(data)
+  }
+
   override def dumpDataToCache(
     fiberID: ParquetDataFile,
     length: Long,

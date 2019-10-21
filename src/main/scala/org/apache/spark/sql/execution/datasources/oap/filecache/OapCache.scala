@@ -20,9 +20,11 @@ package org.apache.spark.sql.execution.datasources.oap.filecache
 import java.util.concurrent.atomic.AtomicLong
 
 import scala.collection.JavaConverters._
+
 import com.google.common.cache._
-import org.apache.arrow.plasma
+
 import org.apache.arrow.plasma.PlasmaClient
+
 import org.apache.spark.SparkEnv
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.execution.datasources.OapException
