@@ -141,6 +141,7 @@ private[sql] class FiberCacheManager(
 
   private val GUAVA_CACHE = "guava"
   private val SIMPLE_CACHE = "simple"
+  private val EXTERNAL_CACHE = "external"
   private val DEFAULT_CACHE_STRATEGY = GUAVA_CACHE
 
   private var _dataCacheCompressEnable = sparkEnv.conf.get(
@@ -166,12 +167,15 @@ private[sql] class FiberCacheManager(
         memoryManager.indexCacheMemory,
         memoryManager.cacheGuardianMemory,
         indexDataSeparationEnable)
+    } else if (cacheName.equals(EXTERNAL_CACHE)) {
+      new ExternalCache()
     } else if (cacheName.equals(SIMPLE_CACHE)) {
       new SimpleOapCache()
     } else {
       throw new OapException(s"Unsupported cache strategy $cacheName")
     }
   }
+  override def isOnHeapMemoryBased: Boolean = cacheBackend.isOnHeapMemoryBased
 
   def stop(): Unit = {
     cacheBackend.cleanUp()
@@ -298,7 +302,7 @@ private[sql] class FiberCacheManager(
     dumpToCacheFunc: (ParquetDataFile, OnHeapColumnVector, Int) => Array[Byte]
   ): FiberCache = { throw new RuntimeException("Unsupported Operation") }
 
-  override def isOnHeapMemoryBased: Boolean = false
+
 }
 
 private[sql] class DataFileMetaCacheManager extends Logging {

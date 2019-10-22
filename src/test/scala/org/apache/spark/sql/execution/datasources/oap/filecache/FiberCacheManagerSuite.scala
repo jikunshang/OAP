@@ -19,6 +19,7 @@ package org.apache.spark.sql.execution.datasources.oap.filecache
 
 import java.util.concurrent.{Callable, Executors, TimeUnit}
 
+import org.apache.spark.sql.execution.datasources.OapException
 import org.apache.spark.sql.oap.OapRuntime
 import org.apache.spark.sql.test.oap.SharedOapContext
 import org.apache.spark.util.Utils
@@ -334,5 +335,37 @@ class FiberCacheManagerSuite extends SharedOapContext {
     // Call the following to evict all the fibers in case it has a impact on the following test.
     fiberCacheManager.clearAllFibers()
     Thread.sleep(1000)
+  }
+
+  // test external cache(plasma) put and get method.
+  // method put need a FiberId and byte[], high level should construct them and call put.
+  // method get need a FiberId and return a fibercache which contains an onheap byte[].
+  test("test external cache") {
+//    val cmd = "plasma_store_server -m 10000000 -s /tmp/plasmaStore_123 & "
+//    print(cmd)
+//    Process(cmd).!
+//    print(System.getProperty("java.library.path") + "\n")
+    var cache: ExternalCache = null
+    try {
+      cache = new ExternalCache()
+    } catch {
+      case e: OapException => print(e)
+      case other => print(other)
+    }
+
+    val data1 = new Array[Byte](100)
+    for(i <- 0 to 99)
+      data1(i) = i.toByte
+
+    val fiberId1 = TestDataFiberId(() => FiberCache(data1), "testExternalCache")
+
+    cache.put(fiberId1, data1)
+    assert(cache.contains(fiberId1) == true)
+
+    val fiber = cache.get(fiberId1)
+    assert (fiber.toArray sameElements data1)
+
+    fiber.release()
+    Thread.sleep(500)
   }
 }

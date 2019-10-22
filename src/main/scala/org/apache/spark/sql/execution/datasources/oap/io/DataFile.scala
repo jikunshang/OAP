@@ -21,9 +21,11 @@ import java.io.Closeable
 import java.lang.reflect.Constructor
 
 import scala.util.{Failure, Success, Try}
+
 import com.google.common.cache.{CacheBuilder, CacheLoader, LoadingCache}
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.FSDataInputStream
+
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.execution.datasources.{OapException, RecordReader}
 import org.apache.spark.sql.execution.datasources.oap.filecache.{FiberCache, FiberId}

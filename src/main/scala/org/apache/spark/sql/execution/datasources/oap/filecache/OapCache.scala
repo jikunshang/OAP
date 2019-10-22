@@ -17,19 +17,23 @@
 
 package org.apache.spark.sql.execution.datasources.oap.filecache
 
+import java.nio.ByteBuffer
 import java.util.concurrent.atomic.AtomicLong
 
 import scala.collection.JavaConverters._
 
 import com.google.common.cache._
-
+import org.apache.arrow.plasma
 import org.apache.arrow.plasma.PlasmaClient
+import org.apache.arrow.plasma.exceptions._
 
 import org.apache.spark.SparkEnv
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.execution.datasources.OapException
+import org.apache.spark.sql.execution.datasources.oap.filecache
 import org.apache.spark.sql.internal.oap.OapConf
 import org.apache.spark.sql.oap.OapRuntime
+import org.apache.spark.unsafe.NativeLoader
 import org.apache.spark.util.Utils
 
 trait OapCache {
@@ -39,14 +43,14 @@ trait OapCache {
   val indexFiberCount: AtomicLong = new AtomicLong(0)
 
   def get(fiber: FiberId): FiberCache
-  def put(fiber: FiberId, data: Array[Byte])
+  def put(fiber: FiberId, data: Array[Byte]): Unit
   def getIfPresent(fiber: FiberId): FiberCache
   def getFibers: Set[FiberId]
   def invalidate(fiber: FiberId): Unit
   def invalidateAll(fibers: Iterable[FiberId]): Unit
   def cacheSize: Long
   def cacheCount: Long
-  def cacheStats: CacheStats
+  def cacheStats: filecache.CacheStats
   def pendingFiberCount: Int
   def cleanUp(): Unit = {
     invalidateAll(getFibers)
@@ -55,6 +59,7 @@ trait OapCache {
     indexFiberSize.set(0L)
     indexFiberCount.set(0L)
   }
+  def isOnHeapMemoryBased: Boolean
 
   def incFiberCountAndSize(fiber: FiberId, count: Long, size: Long): Unit = {
     if (fiber.isInstanceOf[DataFiberId] || fiber.isInstanceOf[TestDataFiberId]) {
@@ -92,6 +97,8 @@ class SimpleOapCache extends OapCache with Logging {
   // We don't bother the memory use of Simple Cache
   private val cacheGuardian = new CacheGuardian(Int.MaxValue)
   cacheGuardian.start()
+
+  override def isOnHeapMemoryBased: Boolean = false
 
   override def get(fiberId: FiberId): FiberCache = {
     val fiberCache = cache(fiberId)
@@ -182,7 +189,7 @@ class GuavaOapCache(
   } else {
     null
   }
-
+  override def isOnHeapMemoryBased: Boolean = false
   private def initLoadingCache(weight: Int) = {
     CacheBuilder.newBuilder()
       .recordStats()
@@ -364,19 +371,43 @@ class GuavaOapCache(
     generalCacheInstance = null
   }
 }
-
+// TODO: objectId should be 20 bytes, we could use consistent hash to generate.
 class ExternalCache extends OapCache with Logging {
   private val conf = SparkEnv.get.conf
   private val externalStoreCacheSocket: String =
     conf.get(OapConf.OAP_FIBERCACHE_EXTERNAL_STORE_PATH.key, "/tmp/plasmaStore")
-  val plasmaClient = new PlasmaClient(externalStoreCacheSocket, "", -1)
+  private var cacheInit: Boolean = false
+  def init(): Unit = {
+    if (!cacheInit) {
+      try {
+        System.loadLibrary("plasma_java")
+      } catch {
+        case e: Exception => logError(s"load plasma jni lib failed " + e.getMessage)
+      }
+      cacheInit = true
+    }
+  }
+  init()
+
+  val plasmaClient = new plasma.PlasmaClient(externalStoreCacheSocket, "", 0)
   val cacheGuardian = new CacheGuardian(10000000000L)
   logDebug("plasma client start")
 
-  override def get(fiber: FiberId): FiberCache = {
-    val objectId = fiber.toString.getBytes()
+  def delete(fiberId: FiberId): Unit = {
+    val objectId = fiberId.toString.getBytes()
+    plasmaClient.delete(objectId)
+  }
 
-    if(plasmaClient.contains(objectId)) {
+  def contains(fiberId: FiberId): Boolean = {
+    val objectId = fiberId.toString.getBytes()
+    if (plasmaClient.contains(objectId)) true
+    else false
+  }
+
+  override def get(fiberId: FiberId): FiberCache = {
+    val objectId = fiberId.toString.getBytes()
+
+    if(contains(fiberId)) {
       val fiberCache = FiberCache( plasmaClient.get(objectId, -1, false))
       fiberCache.occupy()
       // cacheGuardian will call realDispose in the end, but in externalCache
@@ -384,24 +415,25 @@ class ExternalCache extends OapCache with Logging {
       // Plasma server will hold all object and do lru evict. So problem now is how to
       // maintain a plasma client which ExternalCache(get), memmoryManager(put) and
       // dumpToCache(release) could reference.
-      cacheGuardian.addRemovalFiber(fiber, fiberCache)
+      cacheGuardian.addRemovalFiber(fiberId, fiberCache)
       fiberCache
     } else {
       // memory manager createEmptyFiberCache
       // plasma have a get API return a onheap byte[],but it's not zero-copy.
-      val fiberCache = cache(fiber)
+      val fiberCache = cache(fiberId)
       fiberCache.occupy()
-      cacheGuardian.addRemovalFiber(fiber, fiberCache)
+      cacheGuardian.addRemovalFiber(fiberId, fiberCache)
       fiberCache
     }
 //    throw new OapException("unsupported method")
   }
 
-  override def put(fiber: FiberId, data: Array[Byte]): Unit = {
-    val objectId = fiber.toString.getBytes()
-    plasmaClient.put(objectId, data, null)
+  override def put(fiberId: FiberId, data: Array[Byte]): Unit = {
+    val objectId = fiberId.toString.getBytes()
+    if( !contains(fiberId)) plasmaClient.put(objectId, data, null)
+    else return
   }
-
+  override def isOnHeapMemoryBased: Boolean = true
   private val _cacheSize: AtomicLong = new AtomicLong(0)
 
   override def getIfPresent(fiber: FiberId): FiberCache = {
@@ -442,3 +474,18 @@ class ExternalCache extends OapCache with Logging {
     indexFiberCount.set(0L)
   }
 }
+
+// object ExternalCache extends Logging {
+//  def apply(): ExternalCache = {
+//    if(!inited) {
+//    val str = System.getProperty("java.library.path")
+//    logInfo(s"java.library.path is $str")
+//    System.loadLibrary("plasma_java")
+//
+//    new ExternalCache()
+//    } else
+//
+//  }
+//
+//  private var inited: Boolean = false
+// }

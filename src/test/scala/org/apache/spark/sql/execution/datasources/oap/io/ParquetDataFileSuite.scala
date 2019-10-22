@@ -40,13 +40,15 @@ import org.apache.parquet.schema.Type.Repetition.OPTIONAL
 import org.apache.parquet.schema.Type.Repetition.REQUIRED
 import org.scalatest.BeforeAndAfterEach
 
-import org.apache.spark.SparkFunSuite
+import org.apache.spark.{SparkEnv, SparkFunSuite}
 import org.apache.spark.internal.Logging
 import org.apache.spark.memory.MemoryMode
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.execution.datasources.oap.filecache.FiberCache
-import org.apache.spark.sql.execution.datasources.parquet.{ParquetReadSupportWrapper, SkippableVectorizedColumnReader, VectorizedColumnReader}
-import org.apache.spark.sql.execution.vectorized.OnHeapColumnVector
+import org.apache.spark.sql.execution.datasources.OapException
+import org.apache.spark.sql.execution.datasources.oap.filecache.{DataFiberId, FiberCache, TestDataFiberId}
+import org.apache.spark.sql.execution.datasources.oap.io.ParquetDataFiberWriter.{fiberLength, getContentDicData}
+import org.apache.spark.sql.execution.datasources.parquet.{ParquetDictionaryWrapper, ParquetReadSupportWrapper, SkippableVectorizedColumnReader, VectorizedColumnReader}
+import org.apache.spark.sql.execution.vectorized.{Dictionary, OnHeapColumnVector}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.internal.oap.OapConf
 import org.apache.spark.sql.oap.OapRuntime
@@ -1480,7 +1482,10 @@ class ParquetFiberDataLoaderSuite extends ParquetDataFileSuite {
   private def loadSingleColumn(requiredId: Array[Int]): FiberCache = {
     val conf = new Configuration(configuration)
     addRequestSchemaToConf(conf, requiredId)
-    ParquetFiberDataLoader(conf, reader, 0, None).loadSingleColumn
+    // a tmp fiberId here
+    val fiberdata = new Array[Byte](100)
+    val fiberId = TestDataFiberId(() => FiberCache(fiberdata), "testFiberId")
+    ParquetFiberDataLoader(conf, reader, 0, fiberId, None).loadSingleColumn
   }
 
   test("test loadSingleColumn with reuse reader") {
@@ -1506,4 +1511,3 @@ class ParquetFiberDataLoaderSuite extends ParquetDataFileSuite {
     assert(exception.getMessage.contains("Only can get single column every time"))
   }
 }
-

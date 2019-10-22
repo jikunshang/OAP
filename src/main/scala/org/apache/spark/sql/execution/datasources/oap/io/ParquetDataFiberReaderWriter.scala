@@ -21,6 +21,7 @@ import org.apache.arrow.plasma.PlasmaClient
 import org.apache.parquet.column.{Dictionary, Encoding}
 import org.apache.parquet.io.api.Binary
 import org.apache.parquet.it.unimi.dsi.fastutil.ints.IntList
+
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.execution.datasources.OapException
 import org.apache.spark.sql.execution.datasources.oap.filecache.{FiberCache, FiberId, MemoryBlockHolder}
@@ -45,6 +46,26 @@ object ParquetDataFiberWriter extends Logging {
     dumpToCache(column, total, None)
   }
 
+
+  def getFiberCacheDataSize(column: OnHeapColumnVector, total: Int) : Long = {
+    val dataFiberHeader = ParquetDataFiberHeader(column, total)
+    dataFiberHeader match {
+      case ParquetDataFiberHeader(true, false, 0) =>
+        fiberLength(column, total, 0 )
+      case ParquetDataFiberHeader(true, false, dicLength) =>
+        fiberLength(column, total, 0, dicLength )
+      case ParquetDataFiberHeader(false, true, _) =>
+        ParquetDataFiberHeader.defaultSize.toLong
+      case ParquetDataFiberHeader(false, false, 0) =>
+        fiberLength(column, total, 1)
+      case ParquetDataFiberHeader(false, false, dicLength) =>
+        fiberLength(column, total, 1, dicLength)
+      case ParquetDataFiberHeader(true, true, _) =>
+        throw new OapException("cache data size: impossible header status (true, true, _).")
+      case other => throw new OapException(s"cache data size: impossible header status $other.")
+    }
+  }
+
   /**
    * Used by on heap cache
    * @param column
@@ -56,38 +77,71 @@ object ParquetDataFiberWriter extends Logging {
                   total: Int,
                   fiberID: Option[ParquetDataFile],
                   fiberId: FiberId): FiberCache = {
-//    val totalSize = 100
-//    var data = new Array[Byte](totalSize.toInt)
-//    // construct this data from parquet file balabala
-//    // put this data into plasma
-//    val plasmaClient = new PlasmaClient("", "", 0 )
-//    plasmaClient.put(fiberId.toString.getBytes(), data, null)
-//    FiberCache(data)
-
     val header = ParquetDataFiberHeader(column, total)
+    val length = getFiberCacheDataSize(column, total)
+//    val data = new Array[Byte](length.toInt)
     logDebug(s"will dump column to data fiber dataType = ${column.dataType()}, " +
       s"total = $total, header is $header")
     header match {
       case ParquetDataFiberHeader(true, false, 0) =>
-        val length = fiberLength(column, total, 0)
         val dumpFunc = ( column: OnHeapColumnVector,
                          rowCount: Int) => {
           val data = new Array[Byte](length.toInt)
+          header.putBytesToOnheapBuffer(data)
           getContentData(column, rowCount, ParquetDataFiberHeader.defaultSize, data)
           data
         }
         OapRuntime.getOrCreate.fiberCacheManager.dumpDataToCache(
           length, column, total, fiberId, dumpFunc)
       case ParquetDataFiberHeader(true, false, dicLength) =>
-        throw new OapException("unsupported")
+        val dumpFunc = (column: OnHeapColumnVector,
+                        rowCount: Int) => {
+          val data = new Array[Byte](length.toInt)
+          header.putBytesToOnheapBuffer(data)
+          getContentDicData(column, rowCount, dicLength, ParquetDataFiberHeader.defaultSize, data)
+          data
+        }
+        OapRuntime.getOrCreate.fiberCacheManager.dumpDataToCache(
+          length, column, total, fiberId, dumpFunc)
       case ParquetDataFiberHeader(false, true, _) =>
+        val dumpFunc = (column: OnHeapColumnVector,
+                        rowCount: Int) => {
+          val data = new Array[Byte](ParquetDataFiberHeader.defaultSize)
+          header.putBytesToOnheapBuffer(data)
+          data
+        }
+        OapRuntime.getOrCreate.fiberCacheManager.dumpDataToCache(
+          length, column, total, fiberId, dumpFunc)
       case ParquetDataFiberHeader(false, false, 0) =>
+        val dumpFunc = ( column: OnHeapColumnVector,
+                         rowCount: Int) => {
+          val data = new Array[Byte](length.toInt)
+          header.putBytesToOnheapBuffer(data)
+          Platform.copyMemory(column.getNulls, Platform.BYTE_ARRAY_OFFSET, data,
+            Platform.BYTE_ARRAY_OFFSET + ParquetDataFiberHeader.defaultSize, rowCount)
+          getContentData(column, rowCount, ParquetDataFiberHeader.defaultSize + rowCount, data)
+          data
+        }
+        OapRuntime.getOrCreate.fiberCacheManager.dumpDataToCache(
+          length, column, total, fiberId, dumpFunc)
       case ParquetDataFiberHeader(false, false, dicLength) =>
+        val dumpFunc = (column: OnHeapColumnVector,
+                        rowCount: Int) => {
+          val data = new Array[Byte](length.toInt)
+          header.putBytesToOnheapBuffer(data)
+          Platform.copyMemory(column.getNulls, Platform.BYTE_ARRAY_OFFSET, data,
+            Platform.BYTE_ARRAY_OFFSET + ParquetDataFiberHeader.defaultSize, rowCount)
+          getContentDicData(column, rowCount, dicLength,
+            ParquetDataFiberHeader.defaultSize + rowCount, data)
+          data
+        }
+        OapRuntime.getOrCreate.fiberCacheManager.dumpDataToCache(
+          length, column, total, fiberId, dumpFunc)
       case ParquetDataFiberHeader(true, true, _) =>
+        throw new OapException("impossible header status (true, true, _).")
       case other => throw new OapException(s"impossible header status $other.")
     }
 
-    throw new OapException("unsupport")
   }
 
   /**
@@ -1027,6 +1081,21 @@ case class ParquetDataFiberHeader(noNulls: Boolean, allNulls: Boolean, dicLength
     Platform.putBoolean(null, address + 1, allNulls)
     Platform.putInt(null, address + 2, dicLength)
     address + ParquetDataFiberHeader.defaultSize
+  }
+
+  // for this method toBytes, we need to use Platform.putX to avoid issues
+  // caused by Big Endian/Small Endian on different platforms
+  def toBytes(noNulls: Boolean, allNulls: Boolean, dicLength: Int): Array[Byte] = {
+    val bytes = new Array[Byte](ParquetDataFiberHeader.defaultSize)
+    Platform.putBoolean(bytes, Platform.BYTE_ARRAY_OFFSET, noNulls)
+    Platform.putBoolean(bytes, Platform.BYTE_ARRAY_OFFSET + 1, allNulls)
+    Platform.putInt(bytes, Platform.BYTE_ARRAY_OFFSET + 2, dicLength)
+    bytes
+  }
+
+  def putBytesToOnheapBuffer(data: Array[Byte]): Unit = {
+    System.arraycopy(this.toBytes(noNulls, allNulls, dicLength),
+      0, data, 0, ParquetDataFiberHeader.defaultSize)
   }
 }
 
