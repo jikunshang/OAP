@@ -23,6 +23,7 @@ import java.util.concurrent.atomic.AtomicLong
 import scala.collection.JavaConverters._
 
 import com.google.common.cache._
+import com.google.common.hash._
 import org.apache.arrow.plasma
 import org.apache.arrow.plasma.PlasmaClient
 import org.apache.arrow.plasma.exceptions._
@@ -371,6 +372,7 @@ class GuavaOapCache(
     generalCacheInstance = null
   }
 }
+
 // TODO: objectId should be 20 bytes, we could use consistent hash to generate.
 class ExternalCache extends OapCache with Logging {
   private val conf = SparkEnv.get.conf
@@ -390,80 +392,99 @@ class ExternalCache extends OapCache with Logging {
   init()
 
   val plasmaClient = new plasma.PlasmaClient(externalStoreCacheSocket, "", 0)
-  val cacheGuardian = new CacheGuardian(10000000000L)
+//  val cacheGuardian = new CacheGuardian(10000000000L)
+//  cacheGuardian.start()
   logDebug("plasma client start")
 
+  val  hf: HashFunction = Hashing.murmur3_128()
+
+  def hash(key: Array[Byte]): Array[Byte] = {
+    val ret = new Array[Byte](20)
+    hf.newHasher().putBytes(key).hash().writeBytesTo(ret, 0, 20)
+    ret
+  }
+  def hash(key: String): Array[Byte] = {
+    hash(key.getBytes())
+  }
+
+
   def delete(fiberId: FiberId): Unit = {
-    val objectId = fiberId.toString.getBytes()
+//    val objectId = fiberId.toString.getBytes()
+    val objectId = hash(fiberId.toString)
     plasmaClient.delete(objectId)
   }
 
   def contains(fiberId: FiberId): Boolean = {
-    val objectId = fiberId.toString.getBytes()
+//    val objectId = fiberId.toString.getBytes()
+//    val str = fiberId.toString
+//    val objectId = str.substring(str.length - 20).getBytes()
+    val objectId = hash(fiberId.toString)
     if (plasmaClient.contains(objectId)) true
     else false
   }
 
   override def get(fiberId: FiberId): FiberCache = {
-    val objectId = fiberId.toString.getBytes()
-
+    logDebug(s"external cache get FiberId is ${fiberId}")
+//    val str = fiberId.toString
+//    val objectId = str.substring(str.length - 20).getBytes()
+//    val objectId = fiberId.toString.getBytes()
+    val objectId = hash(fiberId.toString)
     if(contains(fiberId)) {
-      val fiberCache = FiberCache( plasmaClient.get(objectId, -1, false))
+      logDebug(s"Cache hit, get from external cache.")
+      val data: Array[Byte] = plasmaClient.get(objectId, -1, false)
+
+      val fiberCache = FiberCache(data)
       fiberCache.occupy()
       // cacheGuardian will call realDispose in the end, but in externalCache
       // realDispose will wrapping plasma.release(), so it won't free a plasma object.
       // Plasma server will hold all object and do lru evict. So problem now is how to
       // maintain a plasma client which ExternalCache(get), memmoryManager(put) and
       // dumpToCache(release) could reference.
-      cacheGuardian.addRemovalFiber(fiberId, fiberCache)
+//      cacheGuardian.addRemovalFiber(fiberId, fiberCache)
       fiberCache
     } else {
       // memory manager createEmptyFiberCache
       // plasma have a get API return a onheap byte[],but it's not zero-copy.
       val fiberCache = cache(fiberId)
       fiberCache.occupy()
-      cacheGuardian.addRemovalFiber(fiberId, fiberCache)
+//       cacheGuardian.addRemovalFiber(fiberId, fiberCache)
       fiberCache
     }
-//    throw new OapException("unsupported method")
   }
 
   override def put(fiberId: FiberId, data: Array[Byte]): Unit = {
-    val objectId = fiberId.toString.getBytes()
-    if( !contains(fiberId)) plasmaClient.put(objectId, data, null)
+//    val objectId = fiberId.toString.getBytes()
+//    val str = fiberId.toString
+//    val objectId = str.substring(str.length - 20).getBytes()
+    val objectId = hash(fiberId.toString)
+    if( !contains(fiberId)) {
+      logDebug(s"Cache miss, put into external cache")
+      plasmaClient.put(objectId, data, null)
+    }
     else return
   }
   override def isOnHeapMemoryBased: Boolean = true
   private val _cacheSize: AtomicLong = new AtomicLong(0)
 
-  override def getIfPresent(fiber: FiberId): FiberCache = {
-    throw new OapException("unsupported method")
-  }
+  override def getIfPresent(fiber: FiberId): FiberCache = null
 
   override def getFibers: Set[FiberId] = {
-    throw new OapException("unsupported method")
+    Set.empty
   }
 
-  override def invalidate(fiber: FiberId): Unit = {
-    throw new OapException("unsupported method")
-  }
+  override def invalidate(fiber: FiberId): Unit = { }
 
-  override def invalidateAll(fibers: Iterable[FiberId]): Unit = {
-    throw new OapException("unsupported method")
-  }
+  override def invalidateAll(fibers: Iterable[FiberId]): Unit = { }
 
   override def cacheSize: Long = _cacheSize.get()
 
-  override def cacheCount: Long = {
-    throw new OapException("unsupported method")
-  }
+  override def cacheCount: Long = 0
 
-  override def cacheStats: CacheStats = {
-    throw new OapException("unsupported method")
-  }
+  override def cacheStats: CacheStats = CacheStats()
 
   override def pendingFiberCount: Int = {
-    throw new OapException("unsupported method")
+    0
+    //    cacheGuardian.pendingFiberCount
   }
 
   override def cleanUp(): Unit = {

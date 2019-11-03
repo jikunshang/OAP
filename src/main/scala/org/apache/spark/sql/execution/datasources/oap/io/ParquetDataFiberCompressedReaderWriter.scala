@@ -465,8 +465,8 @@ object ParquetDataFiberCompressedWriter extends Logging {
  */
 class ParquetDataFiberCompressedReader (
      address: Long, dataType: DataType, total: Int,
-     var fiberCache: FiberCache) extends ParquetDataFiberReader(
-     address = address, dataType = dataType, total = total) {
+     var fiberCache: FiberCache, val baseObj: AnyRef = null) extends ParquetDataFiberReader(
+     address = address, dataType = dataType, total = total, baseObj = baseObj) {
 
   private var header: ParquetDataFiberCompressedHeader = _
 

@@ -171,7 +171,7 @@ class VectorizedCacheReader(
               columnarBatch.column(order).dataType(), rowCount, fiberCache)
           } else {
             ParquetDataFiberReader(fiberCache.getBaseOffset,
-              columnarBatch.column(order).dataType(), rowCount)
+              columnarBatch.column(order).dataType(), rowCount, fiberCache.getBaseObj)
           }
           val end2 = System.nanoTime()
           loadDicTime += (end2 - start2)

@@ -368,4 +368,23 @@ class FiberCacheManagerSuite extends SharedOapContext {
     fiber.release()
     Thread.sleep(500)
   }
+
+  test("external hash test") {
+    var cache: ExternalCache = null
+    try {
+      cache = new ExternalCache()
+    } catch {
+      case e: OapException => print(e)
+      case other => print(other)
+    }
+    val key1 = "abcdefg"
+    val key2 = "abcdefg"
+    val key3 = "gfedcba"
+
+    val data1 = cache.hash(key1.getBytes())
+
+    assert(cache.hash(key1.getBytes()) sameElements  cache.hash(key2.getBytes()))
+//    assert(cache.hash(key1.getBytes()) sameElements  cache.hash(key3.getBytes()))
+
+  }
 }

@@ -113,7 +113,7 @@ case class FiberCache(fiberData: MemoryBlockHolder) extends Logging {
     bytes
   }
 
-  protected def getBaseObj: AnyRef = {
+  def getBaseObj: AnyRef = {
     // NOTE: A trick here. Since every function need to get memory data has to get here first.
     // So, here check the if the memory has been freed.
     if (disposed) {
@@ -123,7 +123,9 @@ case class FiberCache(fiberData: MemoryBlockHolder) extends Logging {
   }
   def getBaseOffset: Long = fiberData.baseOffset
 
-  def getBoolean(offset: Long): Boolean = Platform.getBoolean(getBaseObj, getBaseOffset + offset)
+  def getBoolean(offset: Long): Boolean = {
+    Platform.getBoolean(getBaseObj, getBaseOffset + offset)
+  }
 
   def getByte(offset: Long): Byte = Platform.getByte(getBaseObj, getBaseOffset + offset)
 
