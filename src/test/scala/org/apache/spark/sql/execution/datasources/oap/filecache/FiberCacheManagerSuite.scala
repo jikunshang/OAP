@@ -19,14 +19,17 @@ package org.apache.spark.sql.execution.datasources.oap.filecache
 
 import java.util.concurrent.{Callable, Executors, TimeUnit}
 
+import org.apache.spark.sql.execution.datasources.oap.io.OapDataFileV1
 import org.apache.spark.sql.oap.OapRuntime
 import org.apache.spark.sql.test.oap.SharedOapContext
+import org.apache.spark.sql.types.{IntegerType, StringType, StructType}
 import org.apache.spark.util.Utils
 
 class FiberCacheManagerSuite extends SharedOapContext {
 
   private val kbSize = 1024
   private val mbSize = kbSize * kbSize
+  private val gbSize = kbSize * kbSize *kbSize
 
   private def generateData(size: Int): Array[Byte] =
     Utils.randomizeInPlace(new Array[Byte](size))
@@ -335,4 +338,32 @@ class FiberCacheManagerSuite extends SharedOapContext {
     fiberCacheManager.clearAllFibers()
     Thread.sleep(1000)
   }
+
+  test( "NonEvictPMCache unit test") {
+    val cache = new NonEvictPMCache(10*mbSize, 100*mbSize, 10*mbSize)
+
+    // allocate from pm
+    for(i <- 1 to 10) {
+      val data_pm = generateData((10*mbSize))
+      val fiber = TestDataFiberId(
+        () => memoryManager.toDataFiberCache(data_pm), "test non evict cache fiber on pm")
+      val fiberCache = cache.get(fiber)
+      assert(cache.dataFiberCount.get() == (i))
+      assert(cache.dataFiberSize.get() ==(10*i*mbSize))
+      assert(fiberCache.toArray sameElements data_pm)
+    }
+
+    // now pm is full, allocate from Dram
+    for(i <- 1 to 10) {
+      val data_dram = generateData(1*mbSize)
+      val fiber = TestDataFiberId(
+        () => memoryManager.toDataFiberCache(data_dram), "test non evict cache fiber on dram" )
+      val fiberCache = cache.get(fiber)
+      assert(fiberCache.toArray sameElements data_dram)
+      assert(cache.dataFiberCount.get() == (10))
+      assert(cache.dataFiberSize.get() == (100*mbSize))
+
+    }
+  }
+
 }
