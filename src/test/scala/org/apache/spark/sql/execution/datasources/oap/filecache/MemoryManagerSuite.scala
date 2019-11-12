@@ -22,6 +22,7 @@ import scala.util.Random
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FSDataInputStream, Path}
 
+import org.apache.spark.SparkEnv
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.execution.datasources.oap.utils.NonNullKeyWriter
 import org.apache.spark.sql.oap.OapRuntime
@@ -166,5 +167,23 @@ class MemoryManagerSuite extends SharedOapContext {
         assert(fiberCache.getBytes(offset, length) === bytes)
         offset += length
     }
+  }
+
+  test("test hybrid Memory manager") {
+    // A mock SparkEnv is needed
+    val hybridMemoryManager = new HybridMemoryManager(SparkEnv.get)
+    val totalMem = hybridMemoryManager.totalCacheMemory
+    var usedMem: Long = 0
+    val allocateSizeOnce = 1024*1024
+    // allocate until pm is full
+    while(usedMem + allocateSizeOnce < totalMem) {
+      val blockPM = hybridMemoryManager.allocate(allocateSizeOnce)
+      usedMem += blockPM.occupiedSize
+      assert("PM" == blockPM.source && allocateSizeOnce == blockPM.length)
+    }
+    // now memory allocated will be DRAM
+    val blockDRAM = hybridMemoryManager.allocate(allocateSizeOnce)
+    assert("DRAM" == blockDRAM.source && allocateSizeOnce == blockDRAM.length)
+
   }
 }

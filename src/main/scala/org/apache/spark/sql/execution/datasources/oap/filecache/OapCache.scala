@@ -17,6 +17,7 @@
 
 package org.apache.spark.sql.execution.datasources.oap.filecache
 
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
 
 import scala.collection.JavaConverters._
@@ -81,6 +82,79 @@ trait OapCache {
   }
 
 }
+
+class NonEvictPMCache(dramSize: Long,
+                      pmSize: Long,
+                      cacheGuardianMemory: Long) extends OapCache with Logging {
+  // We don't bother the memory use of Simple Cache
+  private val cacheGuardian = new CacheGuardian(Int.MaxValue)
+  private val _cacheSize: AtomicLong = new AtomicLong(0)
+  private val _cacheCount: AtomicLong = new AtomicLong(0)
+
+  val cacheMap : ConcurrentHashMap[FiberId, FiberCache] = new ConcurrentHashMap[FiberId, FiberCache]
+  cacheGuardian.start()
+
+  override def get(fiber: FiberId): FiberCache = {
+    if (cacheMap.containsKey(fiber)) {
+      val fiberCache = cacheMap.get(fiber)
+      fiberCache.occupy()
+      fiberCache
+    } else {
+      if (cacheSize < pmSize) {
+        val fiberCache = cache(fiber)
+        incFiberCountAndSize(fiber, 1, fiberCache.size())
+        _cacheSize.addAndGet(fiberCache.size())
+        _cacheCount.addAndGet(1)
+        fiberCache.occupy()
+        cacheMap.put(fiber, fiberCache)
+        fiberCache
+      } else {
+        val fiberCache = cache(fiber)
+        incFiberCountAndSize(fiber, 1, fiberCache.size())
+        fiberCache.occupy()
+        // We only use fiber for once, and CacheGuardian will dispose it after release.
+        cacheGuardian.addRemovalFiber(fiber, fiberCache)
+        decFiberCountAndSize(fiber, 1, fiberCache.size())
+        fiberCache
+      }
+    }
+  }
+
+  override def getIfPresent(fiber: FiberId): FiberCache = {
+    if (cacheMap.contains(fiber)) {
+      cacheMap.get(fiber)
+    } else {
+      throw new RuntimeException("Key not found")
+    }
+  }
+
+  override def getFibers: Set[FiberId] = {
+    // throw new RuntimeException("Unsupported")
+    cacheMap.keySet().asScala.toSet
+  }
+
+  override def invalidate(fiber: FiberId): Unit = {
+    if (cacheMap.contains(fiber)) {
+      cacheMap.remove(fiber)
+    }
+  }
+
+  override def invalidateAll(fibers: Iterable[FiberId]): Unit = {
+    fibers.foreach(invalidate)
+  }
+
+  override def cacheSize: Long = {_cacheSize.get()}
+
+  override def cacheCount: Long = {_cacheCount.get()}
+
+  override def cacheStats: CacheStats = CacheStats()
+
+  override def pendingFiberCount: Int = cacheGuardian.pendingFiberCount
+}
+
+// class CustomizedLRUCache extends OapCache with Logging {
+// TODO
+// }
 
 class SimpleOapCache extends OapCache with Logging {
 

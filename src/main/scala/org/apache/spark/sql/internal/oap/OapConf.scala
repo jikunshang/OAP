@@ -199,6 +199,13 @@ object OapConf {
       .stringConf
       .createWithDefault("0b")
 
+  val OAP_FIBERCACHE_DRAM_INITIAL_SIZE =
+    SqlConfAdapter.buildConf("spark.sql.oap.fiberCache.dram.initial.size")
+      .internal()
+      .doc("Initial size for DRAM cache.")
+      .stringConf
+      .createWithDefault("0b")
+
   val OAP_CACHE_FIBERSENSOR_GETHOSTS_NUM =
     SqlConfAdapter.buildConf("spark.sql.oap.cache.fiberSensor.getHostsNum")
       .internal()

@@ -182,7 +182,8 @@ object FiberCache {
         data,
         Platform.BYTE_ARRAY_OFFSET,
         data.length,
-        data.length)
+        data.length,
+        "DRAM")
     FiberCache(memoryBlockHolder)
   }
 }

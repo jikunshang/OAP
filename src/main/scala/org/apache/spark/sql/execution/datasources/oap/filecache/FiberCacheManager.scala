@@ -101,6 +101,7 @@ private[sql] class FiberCacheManager(
 
   private val GUAVA_CACHE = "guava"
   private val SIMPLE_CACHE = "simple"
+  private val NO_EVICT_CACHE = "noevict"
   private val DEFAULT_CACHE_STRATEGY = GUAVA_CACHE
 
   private var _dataCacheCompressEnable = sparkEnv.conf.get(
@@ -128,6 +129,9 @@ private[sql] class FiberCacheManager(
         indexDataSeparationEnable)
     } else if (cacheName.equals(SIMPLE_CACHE)) {
       new SimpleOapCache()
+    } else if (cacheName.equals(NO_EVICT_CACHE)) {
+      new NonEvictPMCache(20, memoryManager.dataCacheMemory,
+        memoryManager.cacheGuardianMemory)
     } else {
       throw new OapException(s"Unsupported cache strategy $cacheName")
     }

@@ -758,7 +758,7 @@ class ParquetDataFiberCompressedReader (
       val memoryBlockHolder = new MemoryBlockHolder(
         CacheEnum.GENERAL,
         decompressedBytes, Platform.BYTE_ARRAY_OFFSET,
-        decompressedBytes.length, decompressedBytes.length)
+        decompressedBytes.length, decompressedBytes.length, "DRAM")
 
       val fiberCacheReturned = if (num < defaultCapacity) {
         new DecompressBatchedFiberCache(memoryBlockHolder, fiberBatchedInfo.compressed, fiberCache)
