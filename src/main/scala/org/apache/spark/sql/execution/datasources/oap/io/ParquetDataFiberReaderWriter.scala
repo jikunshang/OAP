@@ -54,7 +54,7 @@ object ParquetDataFiberWriter extends Logging {
         // Write header info to Vmemcache address
         //  (fiber.getBaseOffset - 8)& Vmemcache.put
         if (OapRuntime.getOrCreate.fiberCacheManager.isVmemCache) {
-          //FIXME
+          // FIXME
           VMEMCacheJNI.putNative()
         }
         fiber

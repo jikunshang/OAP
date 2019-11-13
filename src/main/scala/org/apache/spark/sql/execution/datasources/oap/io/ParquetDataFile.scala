@@ -17,13 +17,10 @@
 
 package org.apache.spark.sql.execution.datasources.oap.io
 
-import scala.collection.JavaConverters._
-
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 import org.apache.hadoop.util.StringUtils
 import org.apache.parquet.hadoop._
-
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.UnsafeRow
 import org.apache.spark.sql.execution.datasources.RecordReader
@@ -33,6 +30,7 @@ import org.apache.spark.sql.internal.oap.OapConf
 import org.apache.spark.sql.oap.OapRuntime
 import org.apache.spark.sql.sources.Filter
 import org.apache.spark.sql.types._
+import org.apache.spark.unsafe.VMEMCacheJNI
 
 /**
  * ParquetDataFile use xxRecordReader read Parquet Data File,
@@ -93,7 +91,6 @@ private[oap] case class ParquetDataFile(
       fiberDataReader =
         ParquetFiberDataReader.open(configuration, file, meta.footer.toParquetMetadata)
     }
-
     val conf = new Configuration(configuration)
     // setting required column to conf enables us to
     // Vectorized read & cache certain(not all) columns
