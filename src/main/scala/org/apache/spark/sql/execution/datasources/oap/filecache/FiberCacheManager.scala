@@ -105,7 +105,7 @@ private[sql] class FiberCacheManager(
   private val DEFAULT_CACHE_STRATEGY = GUAVA_CACHE
 
   private val VMEM_CACHE = "vmem"
-  private val DEFAULT_CACHE_STRATEGY = "vmem"
+//  private val DEFAULT_CACHE_STRATEGY = "vmem"
 
   private var _dataCacheCompressEnable = sparkEnv.conf.get(
     OapConf.OAP_ENABLE_DATA_FIBER_CACHE_COMPRESSION)
