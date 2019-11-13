@@ -22,7 +22,7 @@ import org.apache.parquet.io.api.Binary
 import org.apache.parquet.it.unimi.dsi.fastutil.ints.IntList
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.execution.datasources.OapException
-import org.apache.spark.sql.execution.datasources.oap.filecache.FiberCache
+import org.apache.spark.sql.execution.datasources.oap.filecache.{FiberCache, FiberId}
 import org.apache.spark.sql.execution.datasources.parquet.ParquetDictionaryWrapper
 import org.apache.spark.sql.execution.vectorized.OnHeapColumnVector
 import org.apache.spark.sql.oap.OapRuntime
@@ -40,13 +40,14 @@ import org.apache.spark.unsafe.{Platform, VMEMCacheJNI}
  */
 object ParquetDataFiberWriter extends Logging {
 
-  def dumpToCache(column: OnHeapColumnVector, total: Int): FiberCache = {
+  def dumpToCache(column: OnHeapColumnVector, total: Int,
+                  fiberId: FiberId = null): FiberCache = {
     val header = ParquetDataFiberHeader(column, total)
     logDebug(s"will dump column to data fiber dataType = ${column.dataType()}, " +
       s"total = $total, header is $header")
     header match {
       case ParquetDataFiberHeader(true, false, 0) =>
-        val length = fiberLength(column, total, 0 )
+        val length = fiberLength(column, total, 0)
         logDebug(s"will apply $length bytes off heap memory for data fiber.")
         val fiber = emptyDataFiber(length)
         val nativeAddress = header.writeToCache(fiber.getBaseOffset)
@@ -54,8 +55,9 @@ object ParquetDataFiberWriter extends Logging {
         // Write header info to Vmemcache address
         //  (fiber.getBaseOffset - 8)& Vmemcache.put
         if (OapRuntime.getOrCreate.fiberCacheManager.isVmemCache) {
-          // FIXME
-          VMEMCacheJNI.putNative()
+          Platform.copyMemory(fiber.getOccupiedSize(), 0, null, nativeAddress - 8, 8)
+          VMEMCacheJNI.putNative(fiberId.toFiberKey().getBytes(), null, fiberId.toFiberKey().getBytes().
+            0, fiber.getBaseOffset - 8, fiber.getOccupiedSize())
         }
         fiber
       case ParquetDataFiberHeader(true, false, dicLength) =>
