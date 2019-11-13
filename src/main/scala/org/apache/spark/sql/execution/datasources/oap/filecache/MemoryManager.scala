@@ -130,7 +130,7 @@ private[sql] abstract class MemoryManager {
   def stop(): Unit = {}
 }
 
-private[sql] object MemoryManager {
+private[sql] object MemoryManager extends Logging {
   /**
    * Dummy block id to acquire memory from [[org.apache.spark.memory.MemoryManager]]
    *
@@ -150,11 +150,12 @@ private[sql] object MemoryManager {
     )
     val memoryManagerOpt =
       conf.get(OapConf.OAP_FIBERCACHE_MEMORY_MANAGER.key, "offheap").toLowerCase
+    logDebug(s"memory config is $memoryManagerOpt")
     memoryManagerOpt match {
       case "offheap" => new OffHeapMemoryManager(sparkEnv)
       case "pm" => new PersistentMemoryManager(sparkEnv)
       case "hybrid" => new HybridMemoryManager(sparkEnv)
-      case "vmemcache" => new VMemCacheManager(sparkEnv)
+      case "vmemcache" => new OffHeapVmemCacheMemoryManager(sparkEnv)
       case "mix" => if (indexDataSeparationEnable) {
         new MixMemoryManager(sparkEnv)
       } else {
@@ -257,6 +258,49 @@ private[filecache] class OffHeapVmemCacheMemoryManager(sparkEnv: SparkEnv)
     _memoryUsed.getAndAdd(-block.occupiedSize)
     logDebug(s"freed ${block.occupiedSize} memory, used: $memoryUsed")
   }
+
+  @volatile private var initialized = false
+  private val lock = new Object
+  private val conf = SparkEnv.get.conf
+  private val initialSizeStr = conf.get(OapConf.OAP_FIBERCACHE_PERSISTENT_MEMORY_INITIAL_SIZE).trim
+  private val vmInitialSize = Utils.byteStringAsBytes(initialSizeStr)
+  require(vmInitialSize > 0, "AEP initial size must be greater than zero")
+  def initializeVMEMCache(): Unit = {
+    if (!initialized) {
+      lock.synchronized {
+        if (!initialized) {
+          val sparkEnv = SparkEnv.get
+          val conf = sparkEnv.conf
+          // The NUMA id should be set when the executor process start up. However, Spark don't
+          // support NUMA binding currently.
+          var numaId = conf.getInt("spark.executor.numa.id", -1)
+          val numaNodesSize = conf.get(OapConf.SIZE_OF_NUMA_NODES)
+          val executorId = sparkEnv.executorId.toInt
+          if (numaId == -1) {
+            logWarning(s"Executor ${executorId} is not bind with NUMA. It" +
+              s" would be better to bind executor with NUMA when cache data to " +
+              s"Intel Optane DC persistent memory.")
+            // Just round the executorId to the total NUMA number.
+            // TODO: improve here
+            numaId = executorId % numaNodesSize
+          }
+
+          val initialPath = conf.get(OapConf.OAP_AEP_INITIAL_PATHS).split(",")(numaId)
+          val fullPath = Utils.createTempDir(initialPath + File.separator + executorId)
+          require(fullPath.isDirectory(), "VMEMCache initialize path must be a directory")
+          val success = VMEMCacheJNI.initialize(fullPath.getCanonicalPath, vmInitialSize);
+          if (success != 0) {
+            throw new SparkException("Failed to call VMEMCacheJNI.initialize")
+          }
+          logInfo(s"Executors ${executorId}: VMEMCache initialize path:" +
+            s" ${fullPath.getCanonicalPath}, size: ${1.0 * vmInitialSize / 1024 / 1024 / 1024}GB")
+          initialized = true
+        }
+      }
+    }
+  }
+
+  initializeVMEMCache()
 }
 
 /**

@@ -17,9 +17,12 @@
 
 package org.apache.spark.sql.execution.datasources.oap.filecache
 
+
 import java.nio.ByteBuffer
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
+
+import scala.collection.JavaConverters._
 
 import com.google.common.cache._
 
@@ -201,6 +204,7 @@ class VMemCache extends OapCache with Logging {
 
   override def get(fiber: FiberId): FiberCache = {
     val fiberKey = fiber.toFiberKey()
+    logDebug(s"fiberKey is $fiberKey")
     val lengthData = new Array[Byte](LongType.defaultSize)
     val res = VMEMCacheJNI.get(fiberKey.getBytes(), null,
       0, fiberKey.length, lengthData, null, 0, LongType.defaultSize)

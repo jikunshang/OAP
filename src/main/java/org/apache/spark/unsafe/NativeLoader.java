@@ -34,6 +34,7 @@ public class NativeLoader {
       logger.info("system library path:" + System.getProperty("java.library.path")
       + System.getProperty("user.dir"));
       System.loadLibrary(libName);
+      logger.info("load libvmemcachejni succeed.");
       return;
     } catch (UnsatisfiedLinkError e) {
       logger.info("load from system library path failed and will try to load from package.");
