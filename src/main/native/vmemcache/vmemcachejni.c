@@ -83,6 +83,44 @@ Java_org_apache_spark_unsafe_VMEMCacheJNI_init(
   return 0;
 }
 
+JNIEXPORT jint JNICALL
+Java_org_apache_spark_unsafe_VMEMCacheJNI_putNative(
+    JNIEnv *env, jclass cls, jbyteArray keyArray, jobject keyBuffer, jint keyOff, jint keyLen,
+    jlong valueBaseAddr, jint valueOff, jint valueLen)
+{
+  const char* key;
+  const char* value;
+
+  check(env);
+
+  if (keyArray != NULL) {
+    key = (const char*)(*env)->GetPrimitiveArrayCritical(env, keyArray, 0);
+  } else {
+    key = (const char*) (*env)->GetDirectBufferAddress(env, keyBuffer);
+  }
+  if (key == NULL) {
+    THROW(env, "java/lang/OutOfMemoryError", "Can't get key buffer");
+    return -1;
+  }
+  key += keyOff;
+
+  if(valueBaseAddr == NULL)
+    return -1;
+
+   value = (char*)valueBaseAddr;
+
+  int put = vmemcache_put(g_cache, key, keyLen, value, valueLen);
+  if (put) {
+    //TODO: workaround to avoid throw exception when put the same key multi times.
+    char msg[256];
+    snprintf(msg, sizeof(msg), "vmemcache_put key:%s error:%s", key, vmemcache_errormsg());
+    //THROW(env, "java/lang/RuntimeException", msg);
+    fprintf(stderr, msg);
+  }
+
+   return put;
+}
+
 /*
  * Class:     com_intel_dcpmcache_vmemcache_VMEMCacheJNI
  * Method:    put
@@ -190,6 +228,46 @@ Java_org_apache_spark_unsafe_VMEMCacheJNI_get(
   }
   if (valueArray != NULL) {
     (*env)->ReleasePrimitiveArrayCritical(env, valueArray, (void *)value, 0);
+  }
+
+  return ret;
+}
+
+/*
+    pass a native address and copy to this addr.
+ */
+JNIEXPORT jint JNICALL
+Java_org_apache_spark_unsafe_VMEMCacheJNI_getNative(
+    JNIEnv *env, jclass cls, jbyteArray keyArray, jobject keyBuffer, jint keyOff, jint keyLen,
+    jlong valueBaseObj, jint valueOff, jint maxValueLen)
+{
+  const char* key;
+  void* value;
+  size_t valueLen;
+
+  check(env);
+
+  if (keyArray != NULL) {
+    key = (const char*)(*env)->GetPrimitiveArrayCritical(env, keyArray, 0);
+  } else {
+    key = (void*) (*env)->GetDirectBufferAddress(env, keyBuffer);
+  }
+  if (key == NULL) {
+    THROW(env, "java/lang/OutOfMemoryError", "Can't get key buffer");
+    return -1;
+  }
+  key += keyOff;
+
+  if(valueBaseObj == NULL)
+    return -1;
+  value = (char *)valueBaseObj;
+
+  ssize_t ret = vmemcache_get(g_cache, key, keyLen, value, maxValueLen, valueOff, &valueLen);
+  if (ret == -1 && errno != ENOENT) {
+    char msg[128];
+    snprintf(msg, 128, "vmemcache_get failed: %s", vmemcache_errormsg());
+    THROW(env, "java/lang/RuntimeException", msg);
+    return -1;
   }
 
   return ret;
