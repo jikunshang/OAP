@@ -237,6 +237,26 @@ private[filecache] class OffHeapMemoryManager(sparkEnv: SparkEnv)
   }
 }
 
+private[filecahe] OffHeapVmemCacheMemoryManager(sparkEnv: SparkEvn)
+  extends OffHeapMemoryManager with Logging{
+
+  override private[filecache] def allocate(size: Long): MemoryBlockHolder = {
+    val occupiedSize = size + /* length size = */ 8
+    val address = Platform.allocateMemory(occupiedSize)
+    _memoryUsed.getAndAdd(occupiedSize)
+    logDebug(s"request allocate $size memory, actual occupied size: " + s"${occupiedSize}, used: $memoryUsed")
+    // For OFF_HEAP, occupied size also equal to the size.
+    MemoryBlockHolder(CacheEnum.GENERAL, null, address + /* length offset = */ 8, size, occupiedSize, "DRAM")
+  }
+
+  override private[filecache] def free(block: MemoryBlockHolder): Unit = {
+    assert(block.baseObject == null)
+    Platform.freeMemory(block.baseOffset - /* length size = */ 8)
+    _memoryUsed.getAndAdd(-block.occupiedSize)
+    logDebug(s"freed ${block.occupiedSize} memory, used: $memoryUsed")
+  }
+}
+
 /**
  * A memory manager which supports allocate/free volatile memory from Intel Optane DC
  * persistent memory.
