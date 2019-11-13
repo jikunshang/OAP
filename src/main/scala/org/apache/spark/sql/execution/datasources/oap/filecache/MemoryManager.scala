@@ -521,6 +521,7 @@ private[filecache] class MixMemoryManager(sparkEnv: SparkEnv)
         .toLowerCase match {
         case "offheap" => new OffHeapMemoryManager(sparkEnv)
         case "pm" => new PersistentMemoryManager(sparkEnv)
+        case "vmemcache" => new OffHeapVmemCacheMemoryManager(sparkEnv)
         case other => throw new UnsupportedOperationException(
           s"The memory manager: ${other} is not supported now")
       }
@@ -532,6 +533,7 @@ private[filecache] class MixMemoryManager(sparkEnv: SparkEnv)
         .toLowerCase match {
         case "offheap" => new OffHeapMemoryManager(sparkEnv)
         case "pm" => new PersistentMemoryManager(sparkEnv)
+        case "vmemcache" => new OffHeapVmemCacheMemoryManager(sparkEnv)
         case other => throw new UnsupportedOperationException(
           s"The memory manager: ${other} is not supported now")
       }

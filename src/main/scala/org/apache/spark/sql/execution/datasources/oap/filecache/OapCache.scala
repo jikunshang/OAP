@@ -17,13 +17,16 @@
 
 package org.apache.spark.sql.execution.datasources.oap.filecache
 
+import java.nio.ByteBuffer
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
 
 import com.google.common.cache._
+
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.execution.datasources.OapException
 import org.apache.spark.sql.oap.OapRuntime
+import org.apache.spark.sql.types.LongType
 import org.apache.spark.unsafe.VMEMCacheJNI
 import org.apache.spark.util.Utils
 
@@ -197,11 +200,10 @@ class VMemCache extends OapCache with Logging {
   cacheGuardian.start()
 
   override def get(fiber: FiberId): FiberCache = {
-    // FIXME MY
-    val key = fiber.asInstanceOf[DataFiberId].file.path +
-      fiber.asInstanceOf[DataFiberId].columnIndex + fiber.asInstanceOf[DataFiberId].rowGroupId
-    // FIXME Get length
-    val res = VMEMCacheJNI.getNative(key, 0, fiber)
+    val fiberKey = fiber.toFiberKey()
+    val lengthData = new Array[Byte](LongType.defaultSize)
+    val res = VMEMCacheJNI.get(fiberKey.getBytes(), null,
+      0, fiberKey.length, lengthData, null, 0, lengthData.length, 0)
     if (res <= 0) {
       val fiberCache = cache(fiber)
       incFiberCountAndSize(fiber, 1, fiberCache.size())
@@ -210,10 +212,11 @@ class VMemCache extends OapCache with Logging {
       cacheGuardian.addRemovalFiber(fiber, fiberCache)
       fiberCache
     } else {
-      val fiberCache = emptyDataFiber(size)
-      cacheGuardian.addRemovalFiber(fiber, fiberCache)
-      VMEMCacheJNI.getNative(key, 0, fiber)
+      val fiberCache = emptyDataFiber(ByteBuffer.wrap(lengthData).getLong().toInt)
+      VMEMCacheJNI.getNative(fiberKey.getBytes(), null,
+        0, fiberKey.length, fiberCache.getBaseOffset, 8, fiberCache.size().toInt)
       fiberCache.occupy()
+      cacheGuardian.addRemovalFiber(fiber, fiberCache)
       fiberCache
     }
   }
