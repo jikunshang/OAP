@@ -39,7 +39,7 @@ public class VMEMCacheJNI {
                                  int valueOff, int valueLen);
 
     /* TODO */
-    public static native int put(byte[] keyArray, ByteBuffer keyBuffer, int keyOff, int keyLen,
+    public static native int putNative(byte[] keyArray, ByteBuffer keyBuffer, int keyOff, int keyLen,
                                  long valueBaseAdj, int valueOff, int valueLen);
 
     /* returns the number of bytes get */
@@ -48,7 +48,7 @@ public class VMEMCacheJNI {
                                  int valueOff, int maxValueLen);
 
     /* TODO */
-    public static native int get(byte[] keyArray, ByteBuffer keyBuffer, int keyOff, int keyLen,
+    public static native int getNative(byte[] keyArray, ByteBuffer keyBuffer, int keyOff, int keyLen,
                                  long valueBaseAdj, int valueOff, int maxValueLen);
 
     public static native int evict(byte[] keyArray, ByteBuffer keyBuffer, int keyOff, int keyLen);

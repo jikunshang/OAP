@@ -51,9 +51,11 @@ object ParquetDataFiberWriter extends Logging {
         val fiber = emptyDataFiber(length)
         val nativeAddress = header.writeToCache(fiber.getBaseOffset)
         dumpDataToFiber(nativeAddress, column, total)
-        // Write header info to Vmemcache
+        // Write header info to Vmemcache address
+        //  (fiber.getBaseOffset - 8)& Vmemcache.put
         if (OapRuntime.getOrCreate.fiberCacheManager.isVmemCache) {
-          // TODO MY
+          //FIXME
+          VMEMCacheJNI.putNative()
         }
         fiber
       case ParquetDataFiberHeader(true, false, dicLength) =>

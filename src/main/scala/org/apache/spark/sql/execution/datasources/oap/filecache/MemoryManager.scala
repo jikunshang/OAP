@@ -237,16 +237,18 @@ private[filecache] class OffHeapMemoryManager(sparkEnv: SparkEnv)
   }
 }
 
-private[filecahe] OffHeapVmemCacheMemoryManager(sparkEnv: SparkEvn)
-  extends OffHeapMemoryManager with Logging{
+private[filecahe] class OffHeapVmemCacheMemoryManager(sparkEnv: SparkEnv)
+  extends OffHeapMemoryManager(sparkEnv) with Logging{
 
   override private[filecache] def allocate(size: Long): MemoryBlockHolder = {
     val occupiedSize = size + /* length size = */ 8
     val address = Platform.allocateMemory(occupiedSize)
     _memoryUsed.getAndAdd(occupiedSize)
-    logDebug(s"request allocate $size memory, actual occupied size: " + s"${occupiedSize}, used: $memoryUsed")
+    logDebug(s"request allocate $size memory, actual occupied size: "
+      + s"${occupiedSize}, used: $memoryUsed")
     // For OFF_HEAP, occupied size also equal to the size.
-    MemoryBlockHolder(CacheEnum.GENERAL, null, address + /* length offset = */ 8, size, occupiedSize, "DRAM")
+    MemoryBlockHolder(CacheEnum.GENERAL, null, address + /* length offset = */ 8, size,
+      occupiedSize, "DRAM")
   }
 
   override private[filecache] def free(block: MemoryBlockHolder): Unit = {
