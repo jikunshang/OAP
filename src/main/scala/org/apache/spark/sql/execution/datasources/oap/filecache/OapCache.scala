@@ -203,7 +203,7 @@ class VMemCache extends OapCache with Logging {
     val fiberKey = fiber.toFiberKey()
     val lengthData = new Array[Byte](LongType.defaultSize)
     val res = VMEMCacheJNI.get(fiberKey.getBytes(), null,
-      0, fiberKey.length, lengthData, null, 0, lengthData.length, 0)
+      0, fiberKey.length, lengthData, null, 0, LongType.defaultSize)
     if (res <= 0) {
       val fiberCache = cache(fiber)
       incFiberCountAndSize(fiber, 1, fiberCache.size())

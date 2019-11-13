@@ -206,7 +206,7 @@ private[filecache] class OffHeapMemoryManager(sparkEnv: SparkEnv)
   }
 
   // TODO: Atomic is really needed?
-  private val _memoryUsed = new AtomicLong(0)
+  protected val _memoryUsed = new AtomicLong(0)
 
   override def memoryUsed: Long = _memoryUsed.get()
 
@@ -237,7 +237,7 @@ private[filecache] class OffHeapMemoryManager(sparkEnv: SparkEnv)
   }
 }
 
-private[filecahe] class OffHeapVmemCacheMemoryManager(sparkEnv: SparkEnv)
+private[filecache] class OffHeapVmemCacheMemoryManager(sparkEnv: SparkEnv)
   extends OffHeapMemoryManager(sparkEnv) with Logging{
 
   override private[filecache] def allocate(size: Long): MemoryBlockHolder = {
