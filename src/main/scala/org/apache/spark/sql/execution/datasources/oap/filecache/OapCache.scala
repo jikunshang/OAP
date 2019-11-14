@@ -206,15 +206,19 @@ class VMemCache extends OapCache with Logging {
     val fiberKey = fiber.toFiberKey()
     logDebug(s"fiberKey is $fiberKey")
     val lengthData = new Array[Byte](LongType.defaultSize)
+    val startTime = System.currentTimeMillis()
     val res = VMEMCacheJNI.get(fiberKey.getBytes(), null,
       0, fiberKey.length, lengthData, null, 0, LongType.defaultSize)
-    logDebug(s"vmemcache.get return $res")
+    logDebug(s"vmemcache.get return $res ," +
+      s" takes ${System.currentTimeMillis() - startTime} ms")
     if (res <= 0) {
       val fiberCache = cache(fiber)
       incFiberCountAndSize(fiber, 1, fiberCache.size())
       fiberCache.occupy()
+      logDebug(s"after occupy, fiber cache refCount = ${fiberCache.refCount}")
       decFiberCountAndSize(fiber, 1, fiberCache.size())
       cacheGuardian.addRemovalFiber(fiber, fiberCache)
+      logDebug(s"after add to guardian fiber cache refCount = ${fiberCache.refCount}")
       fiberCache
     } else {
       val fiberCache = emptyDataFiber(ByteBuffer.wrap(lengthData)

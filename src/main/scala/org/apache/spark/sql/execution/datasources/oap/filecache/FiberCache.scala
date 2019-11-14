@@ -75,6 +75,7 @@ case class FiberCache(fiberData: MemoryBlockHolder) extends Logging {
             // TODO: use lock/sync-obj to leverage the concurrency APIs instead of explicit sleep.
             Thread.sleep(100)
           } else {
+            logDebug(s"refCount = 0 now")
             if (writeLock.tryLock(200, TimeUnit.MILLISECONDS)) {
               try {
                 if (refCount == 0) {
