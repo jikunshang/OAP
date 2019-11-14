@@ -17,11 +17,12 @@
 
 package org.apache.spark.sql.execution.datasources.oap.filecache
 
-import java.nio.ByteBuffer
+import java.nio.{ByteBuffer, ByteOrder}
 
 import sun.nio.ch.DirectBuffer
 
 import org.apache.spark.sql.test.oap.SharedOapContext
+import org.apache.spark.sql.types.LongType
 import org.apache.spark.unsafe.{Platform, VMEMCacheJNI}
 
 class VmemcacheJNISuite extends SharedOapContext{
@@ -74,5 +75,20 @@ class VmemcacheJNISuite extends SharedOapContext{
       assert( bbPut.getLong() == bbGet2.getLong())
     }
 
+  }
+
+  test("platform test") {
+    val src: Long = 1
+
+    val dst = ByteBuffer.allocateDirect(100)
+    val get = new Array[Byte](100)
+
+    Platform.copyMemory(src, Platform.LONG_ARRAY_OFFSET,
+      null, dst.asInstanceOf[DirectBuffer].address(), LongType.defaultSize)
+
+    Platform.copyMemory(null, dst.asInstanceOf[DirectBuffer].address(),
+      get, Platform.BYTE_ARRAY_OFFSET, 100)
+
+    print(ByteBuffer.wrap(get).order(ByteOrder.nativeOrder()).getLong())
   }
 }

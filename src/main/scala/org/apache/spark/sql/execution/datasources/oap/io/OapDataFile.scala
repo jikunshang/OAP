@@ -31,7 +31,7 @@ import org.apache.spark.SparkEnv
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.execution.datasources.oap._
-import org.apache.spark.sql.execution.datasources.oap.filecache.{DataFiberId, FiberCache, VMemCacheManager}
+import org.apache.spark.sql.execution.datasources.oap.filecache.{DataFiberId, FiberCache, FiberId, VMemCacheManager}
 import org.apache.spark.sql.internal.oap.OapConf
 import org.apache.spark.sql.oap.OapRuntime
 import org.apache.spark.sql.sources._
@@ -114,14 +114,14 @@ private[oap] case class OapDataFileV1(
     }
   }
 
-  def cache(groupId: Int, fiberId: Int): FiberCache = {
+  def cache(groupId: Int, columnIndex: Int, fiberId: FiberId = null): FiberCache = {
     val groupMeta = meta.rowGroupsMeta(groupId)
-    val uncompressedLen = groupMeta.fiberUncompressedLens(fiberId)
+    val uncompressedLen = groupMeta.fiberUncompressedLens(columnIndex)
     // for decode
-    val encoding = meta.columnsMeta(fiberId).encoding
+    val encoding = meta.columnsMeta(columnIndex).encoding
 
-    val dataType = schema(fiberId).dataType
-    val dictionary = getDictionary(fiberId)
+    val dataType = schema(columnIndex).dataType
+    val dictionary = getDictionary(columnIndex)
     val fiberParser =
       if (dictionary != null) {
         DictionaryBasedDataFiberParser(encoding, meta, dictionary, dataType)
@@ -134,26 +134,26 @@ private[oap] case class OapDataFileV1(
       } else {
         meta.rowCountInEachGroup
       }
-    val len = groupMeta.fiberLens(fiberId)
+    val len = groupMeta.fiberLens(columnIndex)
     val decompressor: BytesDecompressor = codecFactory.getDecompressor(meta.codec)
 
     // vmemcache enabled
     if (SparkEnv.get.conf.get(OapConf.OAP_FIBERCACHE_MEMORY_MANAGER).equals("vmemcache")) {
       val key: String = {
-        path + "_" + groupId.toString() + "_" + fiberId.toString()
+        path + "_" + groupId.toString() + "_" + columnIndex.toString()
       }
       val data = new Array[Byte](len)
       logWarning(s"keyvalue-----${key}     ${data.length}")
       val get = VMEMCacheJNI.get(key.getBytes(), null,
         0, key.length, data, null, 0, data.length)
       if (get <= 0) {
-        val len = groupMeta.fiberLens(fiberId)
+        val len = groupMeta.fiberLens(columnIndex)
         val decompressor: BytesDecompressor = codecFactory.getDecompressor(meta.codec)
         // get the fiber data start position
         // TODO: update the meta to store the fiber start pos
         var i = 0
         var fiberStart = groupMeta.start
-        while (i < fiberId) {
+        while (i < columnIndex) {
           fiberStart += groupMeta.fiberLens(i)
           i += 1
         }
@@ -177,7 +177,7 @@ private[oap] case class OapDataFileV1(
       // TODO: update the meta to store the fiber start pos
       var i = 0
       var fiberStart = groupMeta.start
-      while (i < fiberId) {
+      while (i < columnIndex) {
         fiberStart += groupMeta.fiberLens(i)
         i += 1
       }

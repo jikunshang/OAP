@@ -18,7 +18,7 @@
 package org.apache.spark.sql.execution.datasources.oap.filecache
 
 
-import java.nio.ByteBuffer
+import java.nio.{ByteBuffer, ByteOrder}
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
 
@@ -74,7 +74,7 @@ trait OapCache {
 
   protected def cache(fiber: FiberId): FiberCache = {
     val cache = fiber match {
-      case DataFiberId(file, columnIndex, rowGroupId) => file.cache(rowGroupId, columnIndex)
+      case DataFiberId(file, columnIndex, rowGroupId) => file.cache(rowGroupId, columnIndex, fiber)
       case BTreeFiberId(getFiberData, _, _, _) => getFiberData.apply()
       case BitmapFiberId(getFiberData, _, _, _) => getFiberData.apply()
       case TestDataFiberId(getFiberData, _) => getFiberData.apply()
@@ -208,6 +208,7 @@ class VMemCache extends OapCache with Logging {
     val lengthData = new Array[Byte](LongType.defaultSize)
     val res = VMEMCacheJNI.get(fiberKey.getBytes(), null,
       0, fiberKey.length, lengthData, null, 0, LongType.defaultSize)
+    logDebug(s"vmemcache.get return $res")
     if (res <= 0) {
       val fiberCache = cache(fiber)
       incFiberCountAndSize(fiber, 1, fiberCache.size())
@@ -216,7 +217,8 @@ class VMemCache extends OapCache with Logging {
       cacheGuardian.addRemovalFiber(fiber, fiberCache)
       fiberCache
     } else {
-      val fiberCache = emptyDataFiber(ByteBuffer.wrap(lengthData).getLong().toInt)
+      val fiberCache = emptyDataFiber(ByteBuffer.wrap(lengthData)
+        .order(ByteOrder.nativeOrder()).getLong().toInt)
       VMEMCacheJNI.getNative(fiberKey.getBytes(), null,
         0, fiberKey.length, fiberCache.getBaseOffset, 8, fiberCache.size().toInt)
       fiberCache.occupy()

@@ -56,10 +56,12 @@ object ParquetDataFiberWriter extends Logging {
         // Write header info to Vmemcache address
         //  (fiber.getBaseOffset - 8)& Vmemcache.put
         if (OapRuntime.getOrCreate.fiberCacheManager.isVmemCache) {
-          Platform.copyMemory(fiber.getOccupiedSize(), Platform.LONG_ARRAY_OFFSET, null, 0, 8)
+          Platform.copyMemory(fiber.getOccupiedSize(), Platform.LONG_ARRAY_OFFSET,
+            null, fiber.getBaseOffset - 8, 8)
           VMEMCacheJNI.putNative(fiberId.toFiberKey().getBytes(), null, 0,
             fiberId.toFiberKey().length, fiber.getBaseOffset - 8,
             0, fiber.getOccupiedSize().toInt)
+
         }
         fiber
       case ParquetDataFiberHeader(true, false, dicLength) =>
@@ -69,7 +71,8 @@ object ParquetDataFiberWriter extends Logging {
         val nativeAddress = header.writeToCache(fiber.getBaseOffset)
         dumpDataAndDicToFiber(nativeAddress, column, total, dicLength)
         if (OapRuntime.getOrCreate.fiberCacheManager.isVmemCache) {
-          Platform.copyMemory(fiber.getOccupiedSize(), Platform.LONG_ARRAY_OFFSET, null, 0, 8)
+          Platform.copyMemory(fiber.getOccupiedSize(), Platform.LONG_ARRAY_OFFSET,
+            null, fiber.getBaseOffset - 8, 8)
           VMEMCacheJNI.putNative(fiberId.toFiberKey().getBytes(), null, 0,
             fiberId.toFiberKey().length, fiber.getBaseOffset - 8,
             0, fiber.getOccupiedSize().toInt)
@@ -81,7 +84,8 @@ object ParquetDataFiberWriter extends Logging {
         val fiber = emptyDataFiber(ParquetDataFiberHeader.defaultSize)
         header.writeToCache(fiber.getBaseOffset)
         if (OapRuntime.getOrCreate.fiberCacheManager.isVmemCache) {
-          Platform.copyMemory(fiber.getOccupiedSize(), Platform.LONG_ARRAY_OFFSET, null, 0, 8)
+          Platform.copyMemory(fiber.getOccupiedSize(), Platform.LONG_ARRAY_OFFSET,
+            null, fiber.getBaseOffset - 8, 8)
           VMEMCacheJNI.putNative(fiberId.toFiberKey().getBytes(), null, 0,
             fiberId.toFiberKey().length, fiber.getBaseOffset - 8,
             0, fiber.getOccupiedSize().toInt)
@@ -95,7 +99,8 @@ object ParquetDataFiberWriter extends Logging {
           dumpNullsToFiber(header.writeToCache(fiber.getBaseOffset), column, total)
         dumpDataToFiber(nativeAddress, column, total)
         if (OapRuntime.getOrCreate.fiberCacheManager.isVmemCache) {
-          Platform.copyMemory(fiber.getOccupiedSize(), Platform.LONG_ARRAY_OFFSET, null, 0, 8)
+          Platform.copyMemory(fiber.getOccupiedSize(), Platform.LONG_ARRAY_OFFSET,
+            null, fiber.getBaseOffset - 8, 8)
           VMEMCacheJNI.putNative(fiberId.toFiberKey().getBytes(), null, 0,
             fiberId.toFiberKey().length, fiber.getBaseOffset - 8,
             0, fiber.getOccupiedSize().toInt)
@@ -109,7 +114,8 @@ object ParquetDataFiberWriter extends Logging {
           dumpNullsToFiber(header.writeToCache(fiber.getBaseOffset), column, total)
         dumpDataAndDicToFiber(nativeAddress, column, total, dicLength)
         if (OapRuntime.getOrCreate.fiberCacheManager.isVmemCache) {
-          Platform.copyMemory(fiber.getOccupiedSize(), Platform.LONG_ARRAY_OFFSET, null, 0, 8)
+          Platform.copyMemory(fiber.getOccupiedSize(), Platform.LONG_ARRAY_OFFSET,
+            null, fiber.getBaseOffset - 8, 8)
           VMEMCacheJNI.putNative(fiberId.toFiberKey().getBytes(), null, 0,
             fiberId.toFiberKey().length, fiber.getBaseOffset - 8,
             0, fiber.getOccupiedSize().toInt)

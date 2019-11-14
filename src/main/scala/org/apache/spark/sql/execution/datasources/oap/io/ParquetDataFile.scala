@@ -88,7 +88,7 @@ private[oap] case class ParquetDataFile(
     inUseFiberCache.update(idx, fiberCache)
   }
 
-  def cache(groupId: Int, fiberId: Int): FiberCache = {
+  def cache(groupId: Int, columnIndex: Int, fiberId: FiberId = null): FiberCache = {
     if (fiberDataReader == null) {
       fiberDataReader =
         ParquetFiberDataReader.open(configuration, file, meta.footer.toParquetMetadata)
@@ -96,8 +96,8 @@ private[oap] case class ParquetDataFile(
     val conf = new Configuration(configuration)
     // setting required column to conf enables us to
     // Vectorized read & cache certain(not all) columns
-    addRequestSchemaToConf(conf, Array(fiberId))
-    ParquetFiberDataLoader(conf, fiberDataReader, groupId).loadSingleColumn
+    addRequestSchemaToConf(conf, Array(columnIndex))
+    ParquetFiberDataLoader(conf, fiberDataReader, groupId).loadSingleColumn(fiberId)
   }
 
   def iterator(
