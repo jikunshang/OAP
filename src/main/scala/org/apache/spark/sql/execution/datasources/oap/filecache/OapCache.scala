@@ -201,7 +201,7 @@ class VMemCache extends OapCache with Logging {
   // We don't bother the memory use of Simple Cache
   private val cacheGuardian = new CacheGuardian(Int.MaxValue)
   cacheGuardian.start()
-
+  var fiberSet = scala.collection.mutable.Set[FiberId]()
   override def get(fiber: FiberId): FiberCache = {
     val fiberKey = fiber.toFiberKey()
     logDebug(s"fiberKey is $fiberKey")
@@ -214,6 +214,7 @@ class VMemCache extends OapCache with Logging {
     val res = -1
     if (res <= 0) {
       val fiberCache = cache(fiber)
+      fiberSet.add(fiber)
       incFiberCountAndSize(fiber, 1, fiberCache.size())
       fiberCache.occupy()
       logDebug(s"after occupy, fiber cache refCount = ${fiberCache.refCount}")
@@ -235,7 +236,22 @@ class VMemCache extends OapCache with Logging {
   override def getIfPresent(fiber: FiberId): FiberCache = null
 
   override def getFibers: Set[FiberId] = {
-    Set.empty
+    val data = new Array[Byte](1)
+    val tmpFiberSet = fiberSet
+    for(fibId <- tmpFiberSet) {
+      val tmpPath = fibId.toString().split(":")(2)
+      val fiberKey = tmpPath.substring(tmpPath.indexOf("/"))
+      val get = VMEMCacheJNI.get(fiberKey.getBytes(), null,
+        0, fiberKey.length, data, null, 0, data.length)
+      if(get <=0 ) {
+        fiberSet.remove(fibId)
+        logDebug(s"$fiberKey is removed.")
+      } else {
+        logDebug(s"$fiberKey is still stored.")
+      }
+    }
+    // logInfo(fiberSet.toString());
+    fiberSet.toSet
   }
 
   override def invalidate(fiber: FiberId): Unit = {}
