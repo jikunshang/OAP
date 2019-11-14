@@ -118,6 +118,9 @@ Java_org_apache_spark_unsafe_VMEMCacheJNI_putNative(
     fprintf(stderr, msg);
   }
 
+  if (keyArray != NULL) {
+    (*env)->ReleasePrimitiveArrayCritical(env, keyArray, (void *)key, 0);
+  }
    return put;
 }
 
@@ -269,6 +272,10 @@ Java_org_apache_spark_unsafe_VMEMCacheJNI_getNative(
     THROW(env, "java/lang/RuntimeException", msg);
     return -1;
   }
+
+   if (keyArray != NULL) {
+     (*env)->ReleasePrimitiveArrayCritical(env, keyArray, (void *)key, 0);
+   }
 
   return ret;
 }

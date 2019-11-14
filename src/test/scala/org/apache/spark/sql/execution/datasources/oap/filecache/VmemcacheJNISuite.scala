@@ -89,6 +89,6 @@ class VmemcacheJNISuite extends SharedOapContext{
     Platform.copyMemory(null, dst.asInstanceOf[DirectBuffer].address(),
       get, Platform.BYTE_ARRAY_OFFSET, 100)
 
-    print(ByteBuffer.wrap(get).order(ByteOrder.nativeOrder()).getLong())
+    print(ByteBuffer.wrap(get).getLong())
   }
 }
