@@ -35,7 +35,7 @@ case class FiberCache(fiberData: MemoryBlockHolder) extends Logging {
   // TODO: make it immutable
   var fiberId: FiberId = _
 
-  val DISPOSE_TIMEOUT = 3000
+  val DISPOSE_TIMEOUT = 100
 
   // record every batch startAddress, endAddress and the boolean of whether compressed
   // and the child column vector length in CompressedBatchFiberInfo

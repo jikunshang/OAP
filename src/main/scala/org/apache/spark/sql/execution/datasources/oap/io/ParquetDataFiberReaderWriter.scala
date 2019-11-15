@@ -44,7 +44,8 @@ object ParquetDataFiberWriter extends Logging {
   def dumpToCache(column: OnHeapColumnVector, total: Int,
                   fiberId: FiberId = null): FiberCache = {
     val header = ParquetDataFiberHeader(column, total)
-    logDebug(s"will dump column to data fiber dataType = ${column.dataType()}, " +
+    logDebug(s"will dump fiberId: ${fiberId}  " +
+      s"column to data fiber dataType = ${column.dataType()}, " +
       s"total = $total, header is $header")
     header match {
       case ParquetDataFiberHeader(true, false, 0) =>
@@ -56,17 +57,17 @@ object ParquetDataFiberWriter extends Logging {
         // Write header info to Vmemcache address
         //  (fiber.getBaseOffset - 8)& Vmemcache.put
         if (OapRuntime.getOrCreate.fiberCacheManager.isVmemCache) {
-          Platform.copyMemory(fiber.getOccupiedSize(), Platform.LONG_ARRAY_OFFSET,
-            null, fiber.getBaseOffset - 8, 8)
+          Platform.putLong(null, fiber.getBaseOffset - 8, fiber.getOccupiedSize())
+//          Platform.copyMemory(fiber.getOccupiedSize(), Platform.LONG_ARRAY_OFFSET,
+//            null, fiber.getBaseOffset - 8, 8)
+          logDebug(s"vmemcacheput params: fiberkey size: ${fiberId.toFiberKey().length}," +
+            s"addr: ${fiber.getBaseOffset - 8}, length: ${fiber.getOccupiedSize().toInt} ")
           val startTime = System.currentTimeMillis()
           val put = VMEMCacheJNI.putNative(fiberId.toFiberKey().getBytes(), null, 0,
             fiberId.toFiberKey().length, fiber.getBaseOffset - 8,
             0, fiber.getOccupiedSize().toInt)
           logDebug(s"Vmemcache_put returns $put ," +
             s"takes ${System.currentTimeMillis() - startTime} ms ")
-
-
-
         }
         fiber
       case ParquetDataFiberHeader(true, false, dicLength) =>
@@ -76,8 +77,11 @@ object ParquetDataFiberWriter extends Logging {
         val nativeAddress = header.writeToCache(fiber.getBaseOffset)
         dumpDataAndDicToFiber(nativeAddress, column, total, dicLength)
         if (OapRuntime.getOrCreate.fiberCacheManager.isVmemCache) {
-          Platform.copyMemory(fiber.getOccupiedSize(), Platform.LONG_ARRAY_OFFSET,
-            null, fiber.getBaseOffset - 8, 8)
+          Platform.putLong(null, fiber.getBaseOffset - 8, fiber.getOccupiedSize())
+//          Platform.copyMemory(fiber.getOccupiedSize(), Platform.LONG_ARRAY_OFFSET,
+//            null, fiber.getBaseOffset - 8, 8)
+          logDebug(s"vmemcacheput params: fiberkey size: ${fiberId.toFiberKey().length}," +
+            s"addr: ${fiber.getBaseOffset - 8}, length: ${fiber.getOccupiedSize().toInt} ")
           val startTime = System.currentTimeMillis()
           val put = VMEMCacheJNI.putNative(fiberId.toFiberKey().getBytes(), null, 0,
             fiberId.toFiberKey().length, fiber.getBaseOffset - 8,
@@ -92,8 +96,11 @@ object ParquetDataFiberWriter extends Logging {
         val fiber = emptyDataFiber(ParquetDataFiberHeader.defaultSize)
         header.writeToCache(fiber.getBaseOffset)
         if (OapRuntime.getOrCreate.fiberCacheManager.isVmemCache) {
-          Platform.copyMemory(fiber.getOccupiedSize(), Platform.LONG_ARRAY_OFFSET,
-            null, fiber.getBaseOffset - 8, 8)
+          Platform.putLong(null, fiber.getBaseOffset - 8, fiber.getOccupiedSize())
+          //          Platform.copyMemory(fiber.getOccupiedSize(), Platform.LONG_ARRAY_OFFSET,
+//            null, fiber.getBaseOffset - 8, 8)
+          logDebug(s"vmemcacheput params: fiberkey size: ${fiberId.toFiberKey().length}," +
+            s"addr: ${fiber.getBaseOffset - 8}, length: ${fiber.getOccupiedSize().toInt} ")
           val startTime = System.currentTimeMillis()
           val put = VMEMCacheJNI.putNative(fiberId.toFiberKey().getBytes(), null, 0,
             fiberId.toFiberKey().length, fiber.getBaseOffset - 8,
@@ -110,8 +117,11 @@ object ParquetDataFiberWriter extends Logging {
           dumpNullsToFiber(header.writeToCache(fiber.getBaseOffset), column, total)
         dumpDataToFiber(nativeAddress, column, total)
         if (OapRuntime.getOrCreate.fiberCacheManager.isVmemCache) {
-          Platform.copyMemory(fiber.getOccupiedSize(), Platform.LONG_ARRAY_OFFSET,
-            null, fiber.getBaseOffset - 8, 8)
+          Platform.putLong(null, fiber.getBaseOffset - 8, fiber.getOccupiedSize())
+          //          Platform.copyMemory(fiber.getOccupiedSize(), Platform.LONG_ARRAY_OFFSET,
+//            null, fiber.getBaseOffset - 8, 8)
+          logDebug(s"vmemcacheput params: fiberkey size: ${fiberId.toFiberKey().length}," +
+            s"addr: ${fiber.getBaseOffset - 8}, length: ${fiber.getOccupiedSize().toInt} ")
           val startTime = System.currentTimeMillis()
           val put = VMEMCacheJNI.putNative(fiberId.toFiberKey().getBytes(), null, 0,
             fiberId.toFiberKey().length, fiber.getBaseOffset - 8,
@@ -128,8 +138,11 @@ object ParquetDataFiberWriter extends Logging {
           dumpNullsToFiber(header.writeToCache(fiber.getBaseOffset), column, total)
         dumpDataAndDicToFiber(nativeAddress, column, total, dicLength)
         if (OapRuntime.getOrCreate.fiberCacheManager.isVmemCache) {
-          Platform.copyMemory(fiber.getOccupiedSize(), Platform.LONG_ARRAY_OFFSET,
-            null, fiber.getBaseOffset - 8, 8)
+          Platform.putLong(null, fiber.getBaseOffset - 8, fiber.getOccupiedSize())
+//          Platform.copyMemory(fiber.getOccupiedSize(), Platform.LONG_ARRAY_OFFSET,
+//            null, fiber.getBaseOffset - 8, 8)
+          logDebug(s"vmemcacheput params: fiberkey size: ${fiberId.toFiberKey().length}," +
+            s"addr: ${fiber.getBaseOffset - 8}, length: ${fiber.getOccupiedSize().toInt} ")
           val startTime = System.currentTimeMillis()
           val put = VMEMCacheJNI.putNative(fiberId.toFiberKey().getBytes(), null, 0,
             fiberId.toFiberKey().length, fiber.getBaseOffset - 8,
@@ -367,7 +380,6 @@ class ParquetDataFiberReader (address: Long, dataType: DataType, total: Int) ext
   def readBatch(
       start: Int, num: Int, column: OnHeapColumnVector): Unit = if (dictionary != null) {
     // Use dictionary encode, value store in dictionaryIds, it's a int array.
-    logDebug(s"Start dic reader")
     column.setDictionary(dictionary)
     val dictionaryIds = column.reserveDictionaryIds(num).asInstanceOf[OnHeapColumnVector]
     header match {
@@ -393,7 +405,6 @@ class ParquetDataFiberReader (address: Long, dataType: DataType, total: Int) ext
     }
   } else {
     column.setDictionary(null)
-    logDebug(s"Start non-dic reader")
     header match {
       case ParquetDataFiberHeader(true, false, _) =>
         val dataNativeAddress = address + ParquetDataFiberHeader.defaultSize

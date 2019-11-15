@@ -218,7 +218,10 @@ private[filecache] class OffHeapMemoryManager(sparkEnv: SparkEnv)
   override def cacheGuardianMemory: Long = _cacheGuardianMemory
 
   override private[filecache] def allocate(size: Long): MemoryBlockHolder = {
+    val startTime = System.currentTimeMillis()
     val address = Platform.allocateMemory(size)
+    logDebug(s"memory manager allocate takes" +
+      s" ${System.currentTimeMillis() - startTime} ms")
     _memoryUsed.getAndAdd(size)
     logDebug(s"request allocate $size memory, actual occupied size: " +
       s"${size}, used: $memoryUsed")
@@ -228,7 +231,10 @@ private[filecache] class OffHeapMemoryManager(sparkEnv: SparkEnv)
 
   override private[filecache] def free(block: MemoryBlockHolder): Unit = {
     assert(block.baseObject == null)
+    val startTime = System.currentTimeMillis()
     Platform.freeMemory(block.baseOffset)
+    logDebug(s"memory manager free takes" +
+      s" ${System.currentTimeMillis() - startTime} ms")
     _memoryUsed.getAndAdd(-block.occupiedSize)
     logDebug(s"freed ${block.occupiedSize} memory, used: $memoryUsed")
   }
@@ -242,8 +248,11 @@ private[filecache] class OffHeapVmemCacheMemoryManager(sparkEnv: SparkEnv)
   extends OffHeapMemoryManager(sparkEnv) with Logging{
 
   override private[filecache] def allocate(size: Long): MemoryBlockHolder = {
+    val startTime = System.currentTimeMillis()
     val occupiedSize = size + /* length size = */ 8
     val address = Platform.allocateMemory(occupiedSize)
+    logDebug(s"memory manager allocate takes" +
+      s" ${System.currentTimeMillis() - startTime} ms")
     _memoryUsed.getAndAdd(occupiedSize)
     logDebug(s"request allocate $size memory, actual occupied size: "
       + s"${occupiedSize}, used: $memoryUsed")
@@ -253,8 +262,11 @@ private[filecache] class OffHeapVmemCacheMemoryManager(sparkEnv: SparkEnv)
   }
 
   override private[filecache] def free(block: MemoryBlockHolder): Unit = {
+    val startTime = System.currentTimeMillis()
     assert(block.baseObject == null)
     Platform.freeMemory(block.baseOffset - /* length size = */ 8)
+    logDebug(s"memory manager free takes" +
+      s" ${System.currentTimeMillis() - startTime} ms")
     _memoryUsed.getAndAdd(-block.occupiedSize)
     logDebug(s"freed ${block.occupiedSize} memory, used: $memoryUsed")
   }
