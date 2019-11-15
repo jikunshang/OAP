@@ -206,8 +206,6 @@ class VMemCache extends OapCache with Logging {
   var fiberSet = scala.collection.mutable.Set[FiberId]()
   override def get(fiber: FiberId): FiberCache = {
     val fiberKey = fiber.toFiberKey()
-    logDebug(s"fiberKey is $fiberKey")
-//    val lengthData = new Array[Byte](LongType.defaultSize)
     val lengthData = ByteBuffer.allocateDirect(LongType.defaultSize)
     val startTime = System.currentTimeMillis()
     val res = VMEMCacheJNI.get(fiberKey.getBytes(), null,
@@ -219,24 +217,16 @@ class VMemCache extends OapCache with Logging {
       fiberSet.add(fiber)
       incFiberCountAndSize(fiber, 1, fiberCache.size())
       fiberCache.occupy()
-      logDebug(s"after occupy, fiber cache refCount = ${fiberCache.refCount}")
       decFiberCountAndSize(fiber, 1, fiberCache.size())
       cacheGuardian.addRemovalFiber(fiber, fiberCache)
-      logDebug(s"after add to guardian fiber cache refCount = ${fiberCache.refCount}")
       fiberCache
     } else { // cache hit
       val length = Platform.getLong(null, lengthData.asInstanceOf[DirectBuffer].address())
-
       val fiberCache = emptyDataFiber(length)
-//        .order(ByteOrder.nativeOrder()).getLong().toInt)
-//    val littleEndian = ByteBuffer.wrap(lengthData).order(ByteOrder.LITTLE_ENDIAN).getLong().toInt
-//    val bigEndian = ByteBuffer.wrap(lengthData).order(ByteOrder.BIG_ENDIAN).getLong().toInt
       val startTime = System.currentTimeMillis()
       val get = VMEMCacheJNI.getNative(fiberKey.getBytes(), null,
         0, fiberKey.length, fiberCache.getBaseOffset, 8, fiberCache.size().toInt)
-      logDebug(s"second getNative require " +
-        s"${length} bytes. " +
-//        s"littleEndian length is $littleEndian , bigEndian length is $bigEndian " +
+      logDebug(s"second getNative require ${length} bytes. " +
         s"returns $get bytes, takes ${System.currentTimeMillis() - startTime} ms")
       fiberCache.fiberId = fiber
       fiberCache.occupy()

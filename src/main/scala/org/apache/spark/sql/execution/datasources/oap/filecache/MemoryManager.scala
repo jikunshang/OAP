@@ -150,7 +150,6 @@ private[sql] object MemoryManager extends Logging {
     )
     val memoryManagerOpt =
       conf.get(OapConf.OAP_FIBERCACHE_MEMORY_MANAGER.key, "offheap").toLowerCase
-    logDebug(s"memory config is $memoryManagerOpt")
     memoryManagerOpt match {
       case "offheap" => new OffHeapMemoryManager(sparkEnv)
       case "pm" => new PersistentMemoryManager(sparkEnv)
@@ -220,8 +219,6 @@ private[filecache] class OffHeapMemoryManager(sparkEnv: SparkEnv)
   override private[filecache] def allocate(size: Long): MemoryBlockHolder = {
     val startTime = System.currentTimeMillis()
     val address = Platform.allocateMemory(size)
-    logDebug(s"memory manager allocate takes" +
-      s" ${System.currentTimeMillis() - startTime} ms")
     _memoryUsed.getAndAdd(size)
     logDebug(s"request allocate $size memory, actual occupied size: " +
       s"${size}, used: $memoryUsed")
@@ -233,8 +230,6 @@ private[filecache] class OffHeapMemoryManager(sparkEnv: SparkEnv)
     assert(block.baseObject == null)
     val startTime = System.currentTimeMillis()
     Platform.freeMemory(block.baseOffset)
-    logDebug(s"memory manager free takes" +
-      s" ${System.currentTimeMillis() - startTime} ms")
     _memoryUsed.getAndAdd(-block.occupiedSize)
     logDebug(s"freed ${block.occupiedSize} memory, used: $memoryUsed")
   }
@@ -251,12 +246,13 @@ private[filecache] class OffHeapVmemCacheMemoryManager(sparkEnv: SparkEnv)
     val startTime = System.currentTimeMillis()
     val occupiedSize = size + /* length size = */ 8
     val address = Platform.allocateMemory(occupiedSize)
-    logDebug(s"memory manager allocate takes" +
-      s" ${System.currentTimeMillis() - startTime} ms")
     _memoryUsed.getAndAdd(occupiedSize)
-    logDebug(s"request allocate $size memory, actual occupied size: "
-      + s"${occupiedSize}, used: $memoryUsed")
-    // For OFF_HEAP, occupied size also equal to the size.
+    logDebug(s"memory manager allocate takes" +
+      s" ${System.currentTimeMillis() - startTime} ms, " +
+      s"request allocate $size memory, actual occupied size: " +
+      s"${occupiedSize}, used: $memoryUsed")
+
+    // For OFF_HEAP_VMEM, occupied size equals size + 8.
     MemoryBlockHolder(CacheEnum.GENERAL, null, address + /* length offset = */ 8, size,
       occupiedSize, "DRAM")
   }
@@ -265,10 +261,10 @@ private[filecache] class OffHeapVmemCacheMemoryManager(sparkEnv: SparkEnv)
     val startTime = System.currentTimeMillis()
     assert(block.baseObject == null)
     Platform.freeMemory(block.baseOffset - /* length size = */ 8)
-    logDebug(s"memory manager free takes" +
-      s" ${System.currentTimeMillis() - startTime} ms")
     _memoryUsed.getAndAdd(-block.occupiedSize)
-    logDebug(s"freed ${block.occupiedSize} memory, used: $memoryUsed")
+    logDebug(s"memory manager free takes" +
+      s" ${System.currentTimeMillis() - startTime} ms" +
+      s"freed ${block.occupiedSize} memory, used: $memoryUsed")
   }
 
   @volatile private var initialized = false
