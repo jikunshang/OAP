@@ -369,6 +369,7 @@ class ParquetDataFiberReader (address: Long, dataType: DataType, total: Int) ext
     header match {
       case ParquetDataFiberHeader(true, false, _) =>
         val dataNativeAddress = address + ParquetDataFiberHeader.defaultSize
+        // todo: duration
         Platform.copyMemory(null,
           dataNativeAddress + start * 4L,
           dictionaryIds.getIntData, Platform.INT_ARRAY_OFFSET, num * 4L)
