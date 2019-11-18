@@ -90,16 +90,20 @@ class NonEvictPMCache(dramSize: Long,
   private val cacheGuardian = new CacheGuardian(Int.MaxValue)
   private val _cacheSize: AtomicLong = new AtomicLong(0)
   private val _cacheCount: AtomicLong = new AtomicLong(0)
+  private val cacheHitCount: AtomicLong = new AtomicLong(0)
+  private val cacheMissCount: AtomicLong = new AtomicLong(0)
 
   val cacheMap : ConcurrentHashMap[FiberId, FiberCache] = new ConcurrentHashMap[FiberId, FiberCache]
   cacheGuardian.start()
 
   override def get(fiber: FiberId): FiberCache = {
     if (cacheMap.containsKey(fiber)) {
+      cacheHitCount.getAndAdd(1)
       val fiberCache = cacheMap.get(fiber)
       fiberCache.occupy()
       fiberCache
     } else {
+      cacheMissCount.getAndAdd(1)
       if (cacheSize < pmSize) {
         val fiberCache = cache(fiber)
         incFiberCountAndSize(fiber, 1, fiberCache.size())
@@ -147,7 +151,12 @@ class NonEvictPMCache(dramSize: Long,
 
   override def cacheCount: Long = {_cacheCount.get()}
 
-  override def cacheStats: CacheStats = CacheStats()
+  override def cacheStats: CacheStats = {
+    CacheStats(_cacheCount.get(), _cacheSize.get(), 0, 0, cacheGuardian.pendingFiberCount,
+      cacheGuardian.pendingFiberSize, cacheHitCount.get(), cacheMissCount.get(),
+      0, 0, 0,
+      0, 0, 0, 0, 0)
+  }
 
   override def pendingFiberCount: Int = cacheGuardian.pendingFiberCount
 }
