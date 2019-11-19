@@ -200,6 +200,9 @@ class SimpleOapCache extends OapCache with Logging {
 class VMemCache extends OapCache with Logging {
   private def emptyDataFiber(fiberLength: Long): FiberCache =
     OapRuntime.getOrCreate.memoryManager.getEmptyDataFiberCache(fiberLength)
+  private val cacheHitCount: AtomicLong = new AtomicLong(0)
+  private val cacheMissCount: AtomicLong = new AtomicLong(0)
+  private val cacheTotalGetTime: AtomicLong = new AtomicLong(0)
   // We don't bother the memory use of Simple Cache
   private val cacheGuardian = new CacheGuardian(Int.MaxValue)
   cacheGuardian.start()
@@ -213,6 +216,7 @@ class VMemCache extends OapCache with Logging {
     logDebug(s"vmemcache.get return $res ," +
       s" takes ${System.currentTimeMillis() - startTime} ms")
     if (res <= 0) {
+      cacheMissCount.addAndGet(1)
       val fiberCache = cache(fiber)
       fiberSet.add(fiber)
       incFiberCountAndSize(fiber, 1, fiberCache.size())
@@ -221,6 +225,7 @@ class VMemCache extends OapCache with Logging {
       cacheGuardian.addRemovalFiber(fiber, fiberCache)
       fiberCache
     } else { // cache hit
+      cacheHitCount.addAndGet(1)
       val length = Platform.getLong(null, lengthData.asInstanceOf[DirectBuffer].address())
       val fiberCache = emptyDataFiber(length)
       val startTime = System.currentTimeMillis()
@@ -261,7 +266,25 @@ class VMemCache extends OapCache with Logging {
 
   override def cacheSize: Long = 0
 
-  override def cacheStats: CacheStats = CacheStats()
+  override def cacheStats: CacheStats = {
+    CacheStats(
+      fiberSet.size, // dataFiberCount
+      0, // dataFiberSize JNIGet
+      0, // indexFiberCount
+      0, // indexFiberSize
+      cacheGuardian.pendingFiberCount, // pendingFiberCount
+      cacheGuardian.pendingFiberSize, // pendingFiberSize
+      cacheHitCount.get(), // dataFiberHitCount
+      cacheMissCount.get(), // dataFiberMissCount
+      cacheHitCount.get(), // dataFiberLoadCount
+      cacheTotalGetTime.get(), // dataTotalLoadTime
+      0, // indexFiberHitCount
+      0, // indexFiberMissCount
+      0, // indexFiberHitCount
+      0, // indexFiberLoadCount
+      0, // indexFiberLoadTime
+      0) // indexEvictionCount JNIGet
+  }
 
   override def cacheCount: Long = 0
 
