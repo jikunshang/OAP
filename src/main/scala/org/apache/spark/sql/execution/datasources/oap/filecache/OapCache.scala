@@ -246,12 +246,11 @@ class VMemCache extends OapCache with Logging {
   override def getIfPresent(fiber: FiberId): FiberCache = null
 
   override def getFibers: Set[FiberId] = {
-    val data = new Array[Byte](1)
     val tmpFiberSet = fiberSet
+    // todo: we can implement a VmemcacheJNI.exist(keys:byte[][])
     for(fibId <- tmpFiberSet) {
       val fiberKey = fibId.toFiberKey()
-      val get = VMEMCacheJNI.get(fiberKey.getBytes(), null,
-        0, fiberKey.length, data, null, 0, data.length)
+      val get = VMEMCacheJNI.exist(fiberKey.getBytes(), null, 0, fiberKey.getBytes().length)
       if(get <=0 ) {
         fiberSet.remove(fibId)
         logDebug(s"$fiberKey is removed.")
