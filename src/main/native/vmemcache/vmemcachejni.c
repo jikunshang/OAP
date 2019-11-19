@@ -42,6 +42,8 @@
     } \
 }
 
+typedef unsigned long long stat_t;
+
 static VMEMcache *g_cache = NULL;
 
 static void check(JNIEnv *env)
@@ -83,6 +85,11 @@ Java_org_apache_spark_unsafe_VMEMCacheJNI_init(
   return 0;
 }
 
+/*
+ * Class:     com_intel_dcpmcache_vmemcache_VMEMCacheJNI
+ * Method:    putNative
+ * Signature: ([BLjava/nio/ByteBuffer;II[BLjava/nio/ByteBuffer;II)I
+ */
 JNIEXPORT jint JNICALL
 Java_org_apache_spark_unsafe_VMEMCacheJNI_putNative(
     JNIEnv *env, jclass cls, jbyteArray keyArray, jobject keyBuffer, jint keyOff, jint keyLen,
@@ -237,7 +244,9 @@ Java_org_apache_spark_unsafe_VMEMCacheJNI_get(
 }
 
 /*
-    pass a native address and copy to this addr.
+ * Class:     com_intel_dcpmcache_vmemcache_VMEMCacheJNI
+ * Method:    getNative
+ * Signature: ([BLjava/nio/ByteBuffer;II[BLjava/nio/ByteBuffer;II)I
  */
 JNIEXPORT jint JNICALL
 Java_org_apache_spark_unsafe_VMEMCacheJNI_getNative(
@@ -313,6 +322,106 @@ Java_org_apache_spark_unsafe_VMEMCacheJNI_evict(
 
   if (keyArray != NULL) {
     (*env)->ReleasePrimitiveArrayCritical(env, keyArray, (void *)key, 0);
+  }
+
+  return 0;
+}
+
+/*
+ * Class:     com_intel_dcpmcache_vmemcache_VMEMCacheJNI
+ * Method:    exist
+ * Signature: ([BLjava/nio/ByteBuffer;II[BLjava/nio/ByteBuffer;II)I
+ */
+JNIEXPORT jint JNICALL
+Java_org_apache_spark_unsafe_VMEMCacheJNI_exist(
+    JNIEnv *env, jclass cls, jbyteArray keyArray, jobject keyBuffer, jint keyOff, jint keyLen)
+{
+  const char* key;
+  size_t valueLen;
+
+  check(env);
+
+  if (keyArray != NULL) {
+    key = (const char*)(*env)->GetPrimitiveArrayCritical(env, keyArray, 0);
+  } else {
+    key = (const char*) (*env)->GetDirectBufferAddress(env, keyBuffer);
+  }
+  if (key == NULL) {
+    THROW(env, "java/lang/OutOfMemoryError", "Can't get key buffer");
+    return -1;
+  }
+  key += keyOff;
+
+  int ret = vmemcache_exists(g_cache, key, keyLen, &valueLen);
+
+  if (keyArray != NULL) {
+    (*env)->ReleasePrimitiveArrayCritical(env, keyArray, (void *)key, 0);
+  }
+
+  return ret ? valueLen : 0;
+}
+
+/*
+ * Class:     com_intel_dcpmcache_vmemcache_VMEMCacheJNI
+ * Method:    status
+ * Signature: ([BLjava/nio/ByteBuffer;II[BLjava/nio/ByteBuffer;II)I
+ */
+JNIEXPORT jint JNICALL
+Java_org_apache_spark_unsafe_VMEMCacheJNI_status(
+    JNIEnv *env, jclass cls, jlongArray statusArray)
+{
+  stat_t stat;
+  int ret;
+  int64_t * status;
+
+  if (statusArray != NULL) {
+    status = (int64_t*)(*env)->GetPrimitiveArrayCritical(env, statusArray, 0);
+  }
+  if(status == NULL) {
+    return -1;
+  }
+
+  // evict count
+  ret = vmemcache_get_stat(g_cache, VMEMCACHE_STAT_EVICT,
+        			&stat, sizeof(stat));
+  if(ret == -1) {
+    status[0] = 0;
+    char msg[128];
+    snprintf(msg, 128, "vmemcache_status failed: %s", vmemcache_errormsg());
+    THROW(env, "java/lang/RuntimeException", msg);
+    return -1;
+  } else {
+    status[0] = (int64_t)stat;
+  }
+
+  // entries count
+  ret = vmemcache_get_stat(g_cache, VMEMCACHE_STAT_ENTRIES,
+        			&stat, sizeof(stat));
+  if(ret == -1) {
+    status[1] = 0;
+    char msg[128];
+    snprintf(msg, 128, "vmemcache_status failed: %s", vmemcache_errormsg());
+    THROW(env, "java/lang/RuntimeException", msg);
+    return -1;
+  } else {
+    status[1] = (int64_t)stat;
+  }
+
+  // pool size
+  ret = vmemcache_get_stat(g_cache, VMEMCACHE_STAT_POOL_SIZE_USED,
+        			&stat, sizeof(stat));
+  if(ret == -1) {
+    status[2] = 0;
+    char msg[128];
+    snprintf(msg, 128, "vmemcache_status failed: %s", vmemcache_errormsg());
+    THROW(env, "java/lang/RuntimeException", msg);
+    return -1;
+  } else {
+    status[2] = (int64_t)stat;
+  }
+
+  if (statusArray != NULL) {
+    (*env)->ReleasePrimitiveArrayCritical(env, statusArray, (void *)status, 0);
   }
 
   return 0;

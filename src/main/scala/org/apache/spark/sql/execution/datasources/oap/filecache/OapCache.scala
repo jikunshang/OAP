@@ -203,6 +203,9 @@ class VMemCache extends OapCache with Logging {
   private val cacheHitCount: AtomicLong = new AtomicLong(0)
   private val cacheMissCount: AtomicLong = new AtomicLong(0)
   private val cacheTotalGetTime: AtomicLong = new AtomicLong(0)
+  private var cacheTotalCount: Long = 0
+  private var cacheEvictCount: Long = 0
+  private var cacheTotalSize: Long = 0
   // We don't bother the memory use of Simple Cache
   private val cacheGuardian = new CacheGuardian(Int.MaxValue)
   cacheGuardian.start()
@@ -267,9 +270,17 @@ class VMemCache extends OapCache with Logging {
   override def cacheSize: Long = 0
 
   override def cacheStats: CacheStats = {
+    val status = new Array[Long](3)
+    VMEMCacheJNI.status(status)
+    cacheEvictCount = status(0)
+    cacheTotalCount = status(1)
+    cacheTotalSize = status(2)
+    logDebug(s"Current status is evict:$cacheEvictCount," +
+      s" count:$cacheTotalCount, size:$cacheTotalSize")
     CacheStats(
-      fiberSet.size, // dataFiberCount
-      0, // dataFiberSize JNIGet
+      // fiberSet.size, // dataFiberCount
+      cacheTotalCount, // dataFiberCount
+      cacheTotalSize, // dataFiberSize JNIGet
       0, // indexFiberCount
       0, // indexFiberSize
       cacheGuardian.pendingFiberCount, // pendingFiberCount
@@ -278,9 +289,9 @@ class VMemCache extends OapCache with Logging {
       cacheMissCount.get(), // dataFiberMissCount
       cacheHitCount.get(), // dataFiberLoadCount
       cacheTotalGetTime.get(), // dataTotalLoadTime
+      cacheEvictCount, // dataEvictionCount
       0, // indexFiberHitCount
       0, // indexFiberMissCount
-      0, // indexFiberHitCount
       0, // indexFiberLoadCount
       0, // indexFiberLoadTime
       0) // indexEvictionCount JNIGet

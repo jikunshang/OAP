@@ -31,11 +31,7 @@ class VmemcacheJNISuite extends SharedOapContext{
     val initializeSize = 1024L * 1024 * 1024
     val success = VMEMCacheJNI.initialize(path, initializeSize)
 
-
     val key = "key"
-
-//    val vMemCacheManager = new OffHeapVmemCacheMemoryManager(SparkEnv.get)
-//    val memoryBlockHolderPut = vMemCacheManager.allocate(108)
 
     // copy length to offheap buffer
     val bbPut = ByteBuffer.allocateDirect(400)
@@ -57,24 +53,17 @@ class VmemcacheJNISuite extends SharedOapContext{
     // get 200 - 400
     VMEMCacheJNI.getNative(key.getBytes, null, 0, key.length,
       bbGet2.asInstanceOf[DirectBuffer].address(), 200, 200)
-//    for(i <- 0 until 20)
-//      print(bbPut.get())
-//    for(i <- 0 until 20)
-//      print(bbGet1.get())
 
     bbPut.asLongBuffer()
     bbGet1.asLongBuffer()
     bbGet2.asLongBuffer()
     for ( i <- 0 until 25) {
-//      assert( bbPut.asLongBuffer().get(i) == bbGet1.asLongBuffer().get(i))
       assert(bbPut.getLong() == bbGet1.getLong())
-//      print(bbPut.get() + "\n")
     }
 
     for( i <- 0 until 25) {
       assert( bbPut.getLong() == bbGet2.getLong())
     }
-
   }
 
   test("platform test") {
@@ -90,5 +79,58 @@ class VmemcacheJNISuite extends SharedOapContext{
       get, Platform.BYTE_ARRAY_OFFSET, 100)
 
     print(ByteBuffer.wrap(get).getLong())
+  }
+
+  test("exist test") {
+    val path = "/mnt/pmem0/spark"
+    val initializeSize = 1024L * 1024 * 1024
+    val success = VMEMCacheJNI.initialize(path, initializeSize)
+
+    val key = "key"
+
+    // copy length to offheap buffer
+    val bbPut = ByteBuffer.allocateDirect(400)
+    for(i <- 0 until 50) {
+      bbPut.putLong(i.toLong)
+    }
+    bbPut.position(0)
+
+    // put
+    VMEMCacheJNI.putNative(key.getBytes, null, 0, key.length,
+      bbPut.asInstanceOf[DirectBuffer].address(), 0, 400)
+
+    val len = VMEMCacheJNI.exist(key.getBytes(), null, 0, key.getBytes().length)
+    assert(len == 400)
+
+    val bbGet = ByteBuffer.allocateDirect(len)
+    VMEMCacheJNI.getNative(key.getBytes(), null, 0, key.getBytes().length,
+      bbGet.asInstanceOf[DirectBuffer].address(), 0, len);
+
+  }
+
+  test("status test") {
+    val path = "/mnt/pmem0/spark"
+    val initializeSize = 1024L * 1024 * 1024
+    val success = VMEMCacheJNI.initialize(path, initializeSize)
+
+    val key = "key"
+    // copy length to offheap buffer
+    val bbPut = ByteBuffer.allocateDirect(400)
+    for(i <- 0 until 50) {
+      bbPut.putLong(i.toLong)
+    }
+    bbPut.position(0)
+
+    // put
+    VMEMCacheJNI.putNative(key.getBytes, null, 0, key.length,
+      bbPut.asInstanceOf[DirectBuffer].address(), 0, 400)
+
+    val status = new Array[Long](3)
+    VMEMCacheJNI.status(status)
+
+    assert(status(0) == 0)
+    assert(status(1) == 1)
+    assert(status(2) >= 400)
+
   }
 }
