@@ -244,7 +244,7 @@ private[filecache] class OffHeapVmemCacheMemoryManager(sparkEnv: SparkEnv)
 
   override private[filecache] def allocate(size: Long): MemoryBlockHolder = {
     val startTime = System.currentTimeMillis()
-    val occupiedSize = size + /* length size = */ 8
+    val occupiedSize = size
     val address = Platform.allocateMemory(occupiedSize)
     _memoryUsed.getAndAdd(occupiedSize)
     logDebug(s"memory manager allocate takes" +
@@ -253,14 +253,14 @@ private[filecache] class OffHeapVmemCacheMemoryManager(sparkEnv: SparkEnv)
       s"${occupiedSize}, used: $memoryUsed")
 
     // For OFF_HEAP_VMEM, occupied size equals size + 8.
-    MemoryBlockHolder(CacheEnum.GENERAL, null, address + /* length offset = */ 8, size,
+    MemoryBlockHolder(CacheEnum.GENERAL, null, address, size,
       occupiedSize, "DRAM")
   }
 
   override private[filecache] def free(block: MemoryBlockHolder): Unit = {
     val startTime = System.currentTimeMillis()
     assert(block.baseObject == null)
-    Platform.freeMemory(block.baseOffset - /* length size = */ 8)
+    Platform.freeMemory(block.baseOffset )
     _memoryUsed.getAndAdd(-block.occupiedSize)
     logDebug(s"memory manager free takes" +
       s" ${System.currentTimeMillis() - startTime} ms" +

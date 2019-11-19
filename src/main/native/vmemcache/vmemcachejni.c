@@ -358,7 +358,7 @@ Java_org_apache_spark_unsafe_VMEMCacheJNI_exist(
     (*env)->ReleasePrimitiveArrayCritical(env, keyArray, (void *)key, 0);
   }
 
-  return ret ? valueLen : 0;
+  return (ret == 1) ? valueLen : 0;
 }
 
 /*

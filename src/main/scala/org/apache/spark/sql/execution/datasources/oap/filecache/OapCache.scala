@@ -17,23 +17,18 @@
 
 package org.apache.spark.sql.execution.datasources.oap.filecache
 
-
-import java.nio.{ByteBuffer, ByteOrder}
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
 
 import scala.collection.JavaConverters._
 
 import com.google.common.cache._
-import sun.nio.ch.DirectBuffer
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.execution.datasources.OapException
 import org.apache.spark.sql.oap.OapRuntime
-import org.apache.spark.sql.types.LongType
-import org.apache.spark.unsafe.{Platform, VMEMCacheJNI}
+import org.apache.spark.unsafe.VMEMCacheJNI
 import org.apache.spark.util.Utils
-
 
 trait OapCache {
   val dataFiberSize: AtomicLong = new AtomicLong(0)
@@ -212,11 +207,9 @@ class VMemCache extends OapCache with Logging {
   var fiberSet = scala.collection.mutable.Set[FiberId]()
   override def get(fiber: FiberId): FiberCache = {
     val fiberKey = fiber.toFiberKey()
-    val lengthData = ByteBuffer.allocateDirect(LongType.defaultSize)
     val startTime = System.currentTimeMillis()
-    val res = VMEMCacheJNI.get(fiberKey.getBytes(), null,
-      0, fiberKey.length, null, lengthData, 0, LongType.defaultSize)
-    logDebug(s"vmemcache.get return $res ," +
+    val res = VMEMCacheJNI.exist(fiberKey.getBytes(), null, 0, fiberKey.getBytes().length)
+    logDebug(s"vmemcache.exist return $res ," +
       s" takes ${System.currentTimeMillis() - startTime} ms")
     if (res <= 0) {
       cacheMissCount.addAndGet(1)
@@ -229,11 +222,11 @@ class VMemCache extends OapCache with Logging {
       fiberCache
     } else { // cache hit
       cacheHitCount.addAndGet(1)
-      val length = Platform.getLong(null, lengthData.asInstanceOf[DirectBuffer].address())
+      val length = res
       val fiberCache = emptyDataFiber(length)
       val startTime = System.currentTimeMillis()
       val get = VMEMCacheJNI.getNative(fiberKey.getBytes(), null,
-        0, fiberKey.length, fiberCache.getBaseOffset, 8, fiberCache.size().toInt)
+        0, fiberKey.length, fiberCache.getBaseOffset, 0, fiberCache.size().toInt)
       logDebug(s"second getNative require ${length} bytes. " +
         s"returns $get bytes, takes ${System.currentTimeMillis() - startTime} ms")
       fiberCache.fiberId = fiber
@@ -312,7 +305,6 @@ class GuavaOapCache(
     cacheGuardianMemory: Long,
     var indexDataSeparationEnable: Boolean)
     extends OapCache with Logging {
-
 
   // TODO: CacheGuardian can also track cache statistics periodically
   private val cacheGuardian = new CacheGuardian(cacheGuardianMemory)
