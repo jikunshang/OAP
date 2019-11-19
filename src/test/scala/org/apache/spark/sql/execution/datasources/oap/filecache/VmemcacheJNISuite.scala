@@ -95,7 +95,7 @@ class VmemcacheJNISuite extends SharedOapContext{
 
     val SIZE_1M = 1024 * 1024
     val SIZE_10M = 10 * SIZE_1M
-    val threadNum = 1
+    val threadNum = 4
 
     val threadArray = new Array[Thread](threadNum)
     for( tid <- 0 until threadNum) {
@@ -124,7 +124,7 @@ class VmemcacheJNISuite extends SharedOapContext{
         for (i <- 0 until 10) {
           startTime = System.nanoTime()
           VMEMCacheJNI.getNative(key.getBytes(), null, 0, key.getBytes().length,
-            bbGet1M.asInstanceOf[DirectBuffer].address() + i * SIZE_1M, 0, SIZE_1M)
+            bbGet1M.asInstanceOf[DirectBuffer].address() + i * SIZE_1M, i*SIZE_1M, SIZE_1M)
           val endTime = System.nanoTime()
           totalTime += (endTime - startTime)
           timeArray(i) = (endTime - startTime)

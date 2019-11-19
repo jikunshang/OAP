@@ -49,6 +49,7 @@ object ParquetDataFiberWriter extends Logging {
       s"total = $total, header is $header")
 
     def putIntoVmemcache(fiber: FiberCache) = {
+      fiber.asyncWriteOffset(fiber.size())
       Platform.putLong(null, fiber.getBaseOffset - 8, fiber.getOccupiedSize())
       val startTime = System.currentTimeMillis()
       val put = VMEMCacheJNI.putNative(fiberId.toFiberKey().getBytes(), null, 0,
@@ -325,12 +326,22 @@ object ParquetDataFiberWriter extends Logging {
  * @param dataType data type of data fiber.
  * @param total total row count of data fiber.
  */
-class ParquetDataFiberReader (address: Long, dataType: DataType, total: Int) extends
-  Logging {
+class ParquetDataFiberReader(address: Long, dataType: DataType, total: Int,
+                             fiber: FiberCache) extends Logging {
 
   private var header: ParquetDataFiberHeader = _
 
   private var dictionary: org.apache.spark.sql.execution.vectorized.Dictionary = _
+
+  def waitAsyncWrite(fiber: FiberCache, offset: Int): Unit = {
+    val startTime: Long = System.currentTimeMillis()
+    while (offset > fiber.getAsyncWriteOffset) {
+      logDebug(s"read offset is $offset, current write offset is ${fiber.getAsyncWriteOffset}")
+      Thread.sleep(10)
+    }
+    logDebug(s"get fiber size: ${fiber.size()} spend" +
+      s" ${System.currentTimeMillis()- startTime} ms")
+  }
 
   /**
    * Read num values to OnHeapColumnVector from data fiber by start position.
@@ -345,12 +356,14 @@ class ParquetDataFiberReader (address: Long, dataType: DataType, total: Int) ext
     val dictionaryIds = column.reserveDictionaryIds(num).asInstanceOf[OnHeapColumnVector]
     header match {
       case ParquetDataFiberHeader(true, false, _) =>
+        waitAsyncWrite(fiber, ParquetDataFiberHeader.defaultSize + (start + num) * 4)
         val dataNativeAddress = address + ParquetDataFiberHeader.defaultSize
         // todo: duration
         Platform.copyMemory(null,
           dataNativeAddress + start * 4L,
           dictionaryIds.getIntData, Platform.INT_ARRAY_OFFSET, num * 4L)
       case ParquetDataFiberHeader(false, false, _) =>
+        waitAsyncWrite(fiber, ParquetDataFiberHeader.defaultSize + total + (start + num) * 4)
         val nullsNativeAddress = address + ParquetDataFiberHeader.defaultSize
         Platform.copyMemory(null,
           nullsNativeAddress + start, column.getNulls, Platform.BYTE_ARRAY_OFFSET, num)
@@ -370,13 +383,14 @@ class ParquetDataFiberReader (address: Long, dataType: DataType, total: Int) ext
     header match {
       case ParquetDataFiberHeader(true, false, _) =>
         val dataNativeAddress = address + ParquetDataFiberHeader.defaultSize
-        readBatch(dataNativeAddress, start, num, column)
+        readBatch(dataNativeAddress, start, num, column, false)
       case ParquetDataFiberHeader(false, false, _) =>
+        waitAsyncWrite(fiber, ParquetDataFiberHeader.defaultSize + total )
         val nullsNativeAddress = address + ParquetDataFiberHeader.defaultSize
         Platform.copyMemory(null,
           nullsNativeAddress + start, column.getNulls, Platform.BYTE_ARRAY_OFFSET, num)
         val dataNativeAddress = nullsNativeAddress + 1 * total
-        readBatch(dataNativeAddress, start, num, column)
+        readBatch(dataNativeAddress, start, num, column, true)
       case ParquetDataFiberHeader(false, true, _) =>
         column.putNulls(0, num)
       case ParquetDataFiberHeader(true, true, _) =>
@@ -475,10 +489,11 @@ class ParquetDataFiberReader (address: Long, dataType: DataType, total: Int) ext
    * Read num values to OnHeapColumnVector from data fiber by start position,
    * not Dictionary encode.
    */
-  private def readBatch(
-      dataNativeAddress: Long, start: Int, num: Int, column: OnHeapColumnVector): Unit = {
+  private def readBatch(dataNativeAddress: Long, start: Int, num: Int,
+      column: OnHeapColumnVector, withNull: Boolean): Unit = {
 
     def readBinaryToColumnVector(): Unit = {
+      waitAsyncWrite(fiber, ParquetDataFiberHeader.defaultSize + total * 8)
       Platform.copyMemory(null,
         dataNativeAddress + start * 4L,
         column.getArrayLengths, Platform.INT_ARRAY_OFFSET, num * 4L)
@@ -506,6 +521,8 @@ class ParquetDataFiberReader (address: Long, dataType: DataType, total: Int) ext
 
         val length = column.getArrayOffset(lastIndex) -
           column.getArrayOffset(firstIndex) + column.getArrayLength(lastIndex)
+        waitAsyncWrite(fiber, ParquetDataFiberHeader.defaultSize
+          + total * 8 + startOffset + length)
 
         val data = new Array[Byte](length)
         Platform.copyMemory(null,
@@ -514,39 +531,47 @@ class ParquetDataFiberReader (address: Long, dataType: DataType, total: Int) ext
         column.getChild(0).asInstanceOf[OnHeapColumnVector].setByteData(data)
       }
     }
-
+    val diclength = if (withNull) total else 0
     dataType match {
       case ByteType | BooleanType =>
+        waitAsyncWrite(fiber, ParquetDataFiberHeader.defaultSize + diclength + start + num)
         Platform.copyMemory(null,
           dataNativeAddress + start, column.getByteData, Platform.BYTE_ARRAY_OFFSET, num)
       case ShortType =>
+        waitAsyncWrite(fiber, ParquetDataFiberHeader.defaultSize + diclength + (start + num) * 2)
         Platform.copyMemory(null,
           dataNativeAddress + start * 2L,
           column.getShortData, Platform.SHORT_ARRAY_OFFSET, num * 2L)
       case IntegerType | DateType =>
+        waitAsyncWrite(fiber, ParquetDataFiberHeader.defaultSize + diclength + (start + num) * 4)
         Platform.copyMemory(null,
           dataNativeAddress + start * 4L,
           column.getIntData, Platform.INT_ARRAY_OFFSET, num * 4L)
       case FloatType =>
+        waitAsyncWrite(fiber, ParquetDataFiberHeader.defaultSize + diclength + (start + num) * 4)
         Platform.copyMemory(null,
           dataNativeAddress + start * 4L,
           column.getFloatData, Platform.FLOAT_ARRAY_OFFSET, num * 4L)
       case LongType | TimestampType =>
+        waitAsyncWrite(fiber, ParquetDataFiberHeader.defaultSize + diclength + (start + num) * 8)
         Platform.copyMemory(null,
           dataNativeAddress + start * 8L,
           column.getLongData, Platform.LONG_ARRAY_OFFSET, num * 8L)
       case DoubleType =>
+        waitAsyncWrite(fiber, ParquetDataFiberHeader.defaultSize + diclength + (start + num) * 8)
         Platform.copyMemory(
           null, dataNativeAddress + start * 8L,
           column.getDoubleData, Platform.DOUBLE_ARRAY_OFFSET, num * 8L)
       case BinaryType | StringType => readBinaryToColumnVector()
       // if DecimalType.is32BitDecimalType(other) as int data type.
       case other if DecimalType.is32BitDecimalType(other) =>
+        waitAsyncWrite(fiber, ParquetDataFiberHeader.defaultSize + diclength + (start + num) * 4)
         Platform.copyMemory(null,
           dataNativeAddress + start * 4L,
           column.getIntData, Platform.INT_ARRAY_OFFSET, num * 4L)
       // if DecimalType.is64BitDecimalType(other) as long data type.
       case other if DecimalType.is64BitDecimalType(other) =>
+        waitAsyncWrite(fiber, ParquetDataFiberHeader.defaultSize + diclength + (start + num) * 8)
         Platform.copyMemory(null,
           dataNativeAddress + start * 8L,
           column.getLongData, Platform.LONG_ARRAY_OFFSET, num * 8L)
@@ -665,6 +690,7 @@ class ParquetDataFiberReader (address: Long, dataType: DataType, total: Int) ext
       dataType: DataType, dicLength: Int, dicNativeAddress: Long): Dictionary = {
 
     def readBinaryDictionary: Dictionary = {
+      waitAsyncWrite(fiber, ParquetDataFiberHeader.defaultSize + dicLength * 4 + total * 4)
       val binaryDictionaryContent = new Array[Binary](dicLength)
       val lengthsArray = new Array[Int](dicLength)
       Platform.copyMemory(null, dicNativeAddress,
@@ -687,24 +713,28 @@ class ParquetDataFiberReader (address: Long, dataType: DataType, total: Int) ext
     dataType match {
       // ByteType, ShortType, IntegerType, DateType Dictionary read as Int type array.
       case ByteType | ShortType | IntegerType | DateType =>
+        waitAsyncWrite(fiber, ParquetDataFiberHeader.defaultSize + total * 4 + dicLength * 4)
         val intDictionaryContent = new Array[Int](dicLength)
         Platform.copyMemory(null,
           dicNativeAddress, intDictionaryContent, Platform.INT_ARRAY_OFFSET, dicLength * 4L)
         IntegerDictionary(intDictionaryContent)
       // FloatType Dictionary read as Float type array.
       case FloatType =>
+        waitAsyncWrite(fiber, ParquetDataFiberHeader.defaultSize + total * 4 + dicLength * 4)
         val floatDictionaryContent = new Array[Float](dicLength)
         Platform.copyMemory(null,
           dicNativeAddress, floatDictionaryContent, Platform.FLOAT_ARRAY_OFFSET, dicLength * 4L)
         FloatDictionary(floatDictionaryContent)
       // LongType Dictionary read as Long type array.
       case LongType | TimestampType =>
+        waitAsyncWrite(fiber, ParquetDataFiberHeader.defaultSize + total * 4 + dicLength * 8)
         val longDictionaryContent = new Array[Long](dicLength)
         Platform.copyMemory(null,
           dicNativeAddress, longDictionaryContent, Platform.LONG_ARRAY_OFFSET, dicLength * 8L)
         LongDictionary(longDictionaryContent)
       // DoubleType Dictionary read as Double type array.
       case DoubleType =>
+        waitAsyncWrite(fiber, ParquetDataFiberHeader.defaultSize + total * 4 + dicLength * 8)
         val doubleDictionaryContent = new Array[Double](dicLength)
         Platform.copyMemory(null,
           dicNativeAddress, doubleDictionaryContent, Platform.DOUBLE_ARRAY_OFFSET, dicLength * 8L)
@@ -715,12 +745,14 @@ class ParquetDataFiberReader (address: Long, dataType: DataType, total: Int) ext
       case StringType | BinaryType => readBinaryDictionary
       // if DecimalType.is32BitDecimalType(other) as int data type.
       case other if DecimalType.is32BitDecimalType(other) =>
+        waitAsyncWrite(fiber, ParquetDataFiberHeader.defaultSize + total * 4 + dicLength * 4)
         val intDictionaryContent = new Array[Int](dicLength)
         Platform.copyMemory(null,
           dicNativeAddress, intDictionaryContent, Platform.INT_ARRAY_OFFSET, dicLength * 4L)
         IntegerDictionary(intDictionaryContent)
       // if DecimalType.is64BitDecimalType(other) as long data type.
       case other if DecimalType.is64BitDecimalType(other) =>
+        waitAsyncWrite(fiber, ParquetDataFiberHeader.defaultSize + total * 4 + dicLength * 8)
         val longDictionaryContent = new Array[Long](dicLength)
         Platform.copyMemory(null,
           dicNativeAddress, longDictionaryContent, Platform.LONG_ARRAY_OFFSET, dicLength * 8L)
@@ -733,8 +765,9 @@ class ParquetDataFiberReader (address: Long, dataType: DataType, total: Int) ext
 }
 
 object ParquetDataFiberReader {
-  def apply(address: Long, dataType: DataType, total: Int): ParquetDataFiberReader = {
-    val reader = new ParquetDataFiberReader(address, dataType, total)
+  def apply(address: Long, dataType: DataType, total: Int,
+            fiber: FiberCache = null): ParquetDataFiberReader = {
+    val reader = new ParquetDataFiberReader(address, dataType, total, fiber)
     reader.readRowGroupMetas()
     reader
   }

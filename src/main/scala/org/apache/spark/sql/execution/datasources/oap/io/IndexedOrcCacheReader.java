@@ -159,7 +159,7 @@ public class IndexedOrcCacheReader extends OrcCacheReader {
       dataFile.update(requiredColumnIds[i], fiberCache);
       long start2 = System.nanoTime();
       fiberReaders[i] = ParquetDataFiberReader$.MODULE$.apply(fiberCache.getBaseOffset(),
-              columnarBatch.column(i).dataType(), rowCount);
+              columnarBatch.column(i).dataType(), rowCount, fiberCache);
       long end2 = System.nanoTime();
       loadDicTime += (end2 - start2);
     }

@@ -19,7 +19,7 @@ package org.apache.spark.sql.execution.datasources.oap.filecache
 
 
 import java.nio.{ByteBuffer, ByteOrder}
-import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.{ConcurrentHashMap, Executors, ExecutorService}
 import java.util.concurrent.atomic.AtomicLong
 
 import scala.collection.JavaConverters._
@@ -205,6 +205,9 @@ class VMemCache extends OapCache with Logging {
   private val cacheTotalGetTime: AtomicLong = new AtomicLong(0)
   private val cacheGuardian = new CacheGuardian(Int.MaxValue)
   cacheGuardian.start()
+
+  lazy val threadPool: ExecutorService = Executors.newFixedThreadPool(16)
+
   var fiberSet = scala.collection.mutable.Set[FiberId]()
   override def get(fiber: FiberId): FiberCache = {
     val fiberKey = fiber.toFiberKey()
@@ -227,17 +230,47 @@ class VMemCache extends OapCache with Logging {
       cacheHitCount.addAndGet(1)
       val length = Platform.getLong(null, lengthData.asInstanceOf[DirectBuffer].address())
       val fiberCache = emptyDataFiber(length)
-      val startTime = System.currentTimeMillis()
-      val get = VMEMCacheJNI.getNative(fiberKey.getBytes(), null,
-        0, fiberKey.length, fiberCache.getBaseOffset, 8, fiberCache.size().toInt)
-      val duration = System.currentTimeMillis() - startTime
-      logDebug(s"second getNative require ${length} bytes. " +
-        s"returns $get bytes, takes ${duration} ms")
-      cacheTotalGetTime.addAndGet(duration)
+      logDebug(s"cache hit, fiberId is: ${fiber}, length is ${length}")
+
+      // if needs params, will be fiberCache, fiberId, dataLength
+      class asyncGetThread extends Runnable {
+        override def run(): Unit = {
+          logDebug("start async get")
+          val startTime = System.currentTimeMillis()
+          val batchSize = 1024 * 1024
+          val batches = length / batchSize
+          val batchLeft = length % batchSize
+          for (i <- 0 until batches.toInt) {
+            val get = VMEMCacheJNI.getNative(fiberKey.getBytes(), null,
+              0, fiberKey.length, fiberCache.getBaseOffset + i * batchSize,
+              8 + i * batchSize, batchSize)
+            fiberCache.asyncWriteOffset(batchSize)
+          }
+          val get = VMEMCacheJNI.getNative(fiberKey.getBytes(), null,
+            0, fiberKey.length, fiberCache.getBaseOffset + batches * batchSize,
+            (8 + batches * batchSize).toInt, batchLeft.toInt)
+          fiberCache.asyncWriteOffset(batchLeft)
+          logDebug(s"async getNative total takes ${System.currentTimeMillis() - startTime} ms")
+        }
+      }
+//      if(asyncIsOn) {
+      if(true) {
+        threadPool.execute(new asyncGetThread())
+      } else {
+
+        val startTime = System.currentTimeMillis()
+        val get = VMEMCacheJNI.getNative(fiberKey.getBytes(), null,
+          0, fiberKey.length, fiberCache.getBaseOffset, 8, fiberCache.size().toInt)
+        val duration = System.currentTimeMillis() - startTime
+        logDebug(s"second getNative require ${length} bytes. " +
+          s"returns $get bytes, takes ${duration} ms")
+        cacheTotalGetTime.addAndGet(duration)
+      }
       fiberCache.fiberId = fiber
       fiberCache.occupy()
       cacheGuardian.addRemovalFiber(fiber, fiberCache)
       fiberCache
+
     }
   }
 
@@ -255,7 +288,7 @@ class VMemCache extends OapCache with Logging {
         fiberSet.remove(fibId)
         logDebug(s"$fiberKey is removed.")
       } else {
-        logDebug(s"$fiberKey is still stored.")
+      //  logDebug(s"$fiberKey is still stored.")
       }
     }
     // logInfo(fiberSet.toString());
