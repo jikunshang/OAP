@@ -31,7 +31,7 @@ import org.apache.spark.SparkEnv
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.execution.datasources.oap._
-import org.apache.spark.sql.execution.datasources.oap.filecache.{DataFiberId, FiberCache, FiberId, VMemCacheManager}
+import org.apache.spark.sql.execution.datasources.oap.filecache.{DataFiberId, FiberCache, FiberId}
 import org.apache.spark.sql.internal.oap.OapConf
 import org.apache.spark.sql.oap.OapRuntime
 import org.apache.spark.sql.sources._

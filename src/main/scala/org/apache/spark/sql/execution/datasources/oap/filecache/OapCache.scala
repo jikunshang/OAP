@@ -17,8 +17,7 @@
 
 package org.apache.spark.sql.execution.datasources.oap.filecache
 
-
-import java.nio.{ByteBuffer, ByteOrder}
+import java.nio.ByteBuffer
 import java.util.concurrent.{ConcurrentHashMap, Executors, ExecutorService}
 import java.util.concurrent.atomic.AtomicLong
 
@@ -33,7 +32,6 @@ import org.apache.spark.sql.oap.OapRuntime
 import org.apache.spark.sql.types.LongType
 import org.apache.spark.unsafe.{Platform, VMEMCacheJNI}
 import org.apache.spark.util.Utils
-
 
 trait OapCache {
   val dataFiberSize: AtomicLong = new AtomicLong(0)
@@ -203,6 +201,10 @@ class VMemCache extends OapCache with Logging {
   private val cacheHitCount: AtomicLong = new AtomicLong(0)
   private val cacheMissCount: AtomicLong = new AtomicLong(0)
   private val cacheTotalGetTime: AtomicLong = new AtomicLong(0)
+  private var cacheTotalCount: Long = 0
+  private var cacheEvictCount: Long = 0
+  private var cacheTotalSize: Long = 0
+  // We don't bother the memory use of Simple Cache
   private val cacheGuardian = new CacheGuardian(Int.MaxValue)
   cacheGuardian.start()
 
@@ -211,11 +213,9 @@ class VMemCache extends OapCache with Logging {
   var fiberSet = scala.collection.mutable.Set[FiberId]()
   override def get(fiber: FiberId): FiberCache = {
     val fiberKey = fiber.toFiberKey()
-    val lengthData = ByteBuffer.allocateDirect(LongType.defaultSize)
     val startTime = System.currentTimeMillis()
-    val res = VMEMCacheJNI.get(fiberKey.getBytes(), null,
-      0, fiberKey.length, null, lengthData, 0, LongType.defaultSize)
-    logDebug(s"vmemcache.get return $res ," +
+    val res = VMEMCacheJNI.exist(fiberKey.getBytes(), null, 0, fiberKey.getBytes().length)
+    logDebug(s"vmemcache.exist return $res ," +
       s" takes ${System.currentTimeMillis() - startTime} ms")
     if (res <= 0) {
       cacheMissCount.addAndGet(1)
@@ -228,9 +228,13 @@ class VMemCache extends OapCache with Logging {
       fiberCache
     } else { // cache hit
       cacheHitCount.addAndGet(1)
-      val length = Platform.getLong(null, lengthData.asInstanceOf[DirectBuffer].address())
+      val length = res
       val fiberCache = emptyDataFiber(length)
-      logDebug(s"cache hit, fiberId is: ${fiber}, length is ${length}")
+      val startTime = System.currentTimeMillis()
+      val get = VMEMCacheJNI.getNative(fiberKey.getBytes(), null,
+        0, fiberKey.length, fiberCache.getBaseOffset, 0, fiberCache.size().toInt)
+      logDebug(s"second getNative require ${length} bytes. " +
+        s"returns $get bytes, takes ${System.currentTimeMillis() - startTime} ms")
 
       // if needs params, will be fiberCache, fiberId, dataLength
       class asyncGetThread extends Runnable {
@@ -243,12 +247,12 @@ class VMemCache extends OapCache with Logging {
           for (i <- 0 until batches.toInt) {
             val get = VMEMCacheJNI.getNative(fiberKey.getBytes(), null,
               0, fiberKey.length, fiberCache.getBaseOffset + i * batchSize,
-              8 + i * batchSize, batchSize)
+              i * batchSize, batchSize)
             fiberCache.asyncWriteOffset(batchSize)
           }
           val get = VMEMCacheJNI.getNative(fiberKey.getBytes(), null,
             0, fiberKey.length, fiberCache.getBaseOffset + batches * batchSize,
-            (8 + batches * batchSize).toInt, batchLeft.toInt)
+             batches * batchSize, batchLeft.toInt)
           fiberCache.asyncWriteOffset(batchLeft)
           logDebug(s"async getNative total takes ${System.currentTimeMillis() - startTime} ms")
         }
@@ -257,7 +261,6 @@ class VMemCache extends OapCache with Logging {
       if(true) {
         threadPool.execute(new asyncGetThread())
       } else {
-
         val startTime = System.currentTimeMillis()
         val get = VMEMCacheJNI.getNative(fiberKey.getBytes(), null,
           0, fiberKey.length, fiberCache.getBaseOffset, 8, fiberCache.size().toInt)
@@ -270,25 +273,22 @@ class VMemCache extends OapCache with Logging {
       fiberCache.occupy()
       cacheGuardian.addRemovalFiber(fiber, fiberCache)
       fiberCache
-
     }
   }
 
   override def getIfPresent(fiber: FiberId): FiberCache = null
 
   override def getFibers: Set[FiberId] = {
-    val data = new Array[Byte](1)
     val tmpFiberSet = fiberSet
-    // FIXME:will influence LRU strategy
+    // todo: we can implement a VmemcacheJNI.exist(keys:byte[][])
     for(fibId <- tmpFiberSet) {
       val fiberKey = fibId.toFiberKey()
-      val get = VMEMCacheJNI.get(fiberKey.getBytes(), null,
-        0, fiberKey.length, data, null, 0, data.length)
+      val get = VMEMCacheJNI.exist(fiberKey.getBytes(), null, 0, fiberKey.getBytes().length)
       if(get <=0 ) {
         fiberSet.remove(fibId)
         logDebug(s"$fiberKey is removed.")
       } else {
-      //  logDebug(s"$fiberKey is still stored.")
+        logDebug(s"$fiberKey is still stored.")
       }
     }
     // logInfo(fiberSet.toString());
@@ -302,9 +302,17 @@ class VMemCache extends OapCache with Logging {
   override def cacheSize: Long = 0
 
   override def cacheStats: CacheStats = {
+    val status = new Array[Long](3)
+    VMEMCacheJNI.status(status)
+    cacheEvictCount = status(0)
+    cacheTotalCount = status(1)
+    cacheTotalSize = status(2)
+    logDebug(s"Current status is evict:$cacheEvictCount," +
+      s" count:$cacheTotalCount, size:$cacheTotalSize")
     CacheStats(
-      fiberSet.size, // dataFiberCount
-      0, // dataFiberSize JNIGet
+      // fiberSet.size, // dataFiberCount
+      cacheTotalCount, // dataFiberCount
+      cacheTotalSize, // dataFiberSize JNIGet
       0, // indexFiberCount
       0, // indexFiberSize
       cacheGuardian.pendingFiberCount, // pendingFiberCount
@@ -313,9 +321,9 @@ class VMemCache extends OapCache with Logging {
       cacheMissCount.get(), // dataFiberMissCount
       cacheHitCount.get(), // dataFiberLoadCount
       cacheTotalGetTime.get(), // dataTotalLoadTime
+      cacheEvictCount, // dataEvictionCount
       0, // indexFiberHitCount
       0, // indexFiberMissCount
-      0, // indexFiberHitCount
       0, // indexFiberLoadCount
       0, // indexFiberLoadTime
       0) // indexEvictionCount JNIGet
@@ -337,7 +345,6 @@ class GuavaOapCache(
     cacheGuardianMemory: Long,
     var indexDataSeparationEnable: Boolean)
     extends OapCache with Logging {
-
 
   // TODO: CacheGuardian can also track cache statistics periodically
   private val cacheGuardian = new CacheGuardian(cacheGuardianMemory)
