@@ -360,6 +360,11 @@
         </exclusion>
       </exclusions>
     </dependency>
+    <dependency>
+      <groupId>org.apache.arrow</groupId>
+      <artifactId>arrow-plasma</artifactId>
+      <version>0.15.0</version>
+    </dependency>
   </dependencies>
 
   <build>

@@ -17,12 +17,16 @@
 
 package org.apache.spark.sql.execution.datasources.oap.filecache
 
+import java.nio.ByteBuffer
 import java.util.concurrent.{Callable, Executors, TimeUnit}
 
+import sun.nio.ch.DirectBuffer
+
+import org.apache.spark.sql.execution.datasources.OapException
 import org.apache.spark.sql.execution.datasources.oap.io.OapDataFileV1
 import org.apache.spark.sql.oap.OapRuntime
 import org.apache.spark.sql.test.oap.SharedOapContext
-import org.apache.spark.sql.types.{IntegerType, StringType, StructType}
+import org.apache.spark.unsafe.Platform
 import org.apache.spark.util.Utils
 
 class FiberCacheManagerSuite extends SharedOapContext {
@@ -365,5 +369,62 @@ class FiberCacheManagerSuite extends SharedOapContext {
 
     }
   }
+
+  test("test external cache") {
+    // TODO:should start a plasma server first.
+    var cache: ExternalCache = null
+    try {
+      cache = new ExternalCache()
+    } catch {
+      case e: OapException => print(e)
+      case other => print(other)
+    }
+
+    val data1 = new Array[Byte](100)
+    for(i <- 0 to 99)
+      data1(i) = i.toByte
+
+    val fiberId1 = TestDataFiberId(() => FiberCache(data1), "testExternalCache")
+
+    val data: ByteBuffer = ByteBuffer.allocateDirect(1000)
+    for( i <- 0 until 100) {
+      Platform.putByte(null, data.asInstanceOf[DirectBuffer].address() + i, i.toByte)
+      print( i.toByte + " ")
+    }
+    print("\n")
+    //    data.position(0)
+
+    for( i <- 0 until 100) {
+      val get = Platform.getByte(null, data.asInstanceOf[DirectBuffer].address() + i)
+      print( get + " " )
+    }
+    print("\n")
+    val mem: MemoryBlockHolder = MemoryBlockHolder(CacheEnum.GENERAL,
+      null, data.asInstanceOf[DirectBuffer].address(), 1000, 1000, "DRAM")
+    val fiber: FiberCache = FiberCache(mem)
+    fiber.fiberId = fiberId1
+    cache.put(fiber)
+    assert(cache.contains(fiberId1) == true)
+
+//    val fiber = cache.get(fiberId1)
+//    assert (fiber.toArray sameElements data1)
+//
+//    fiber.release()
+    Thread.sleep(100)
+
+    val fiberGet = cache.get(fiberId1)
+    for( i <- 0 until 100) {
+      val get = Platform.getByte(null, fiber.getBaseOffset + i)
+      print( get + " ")
+    }
+//     assert( Platform.getLong(fiber.getBaseOffset, i*LongType.defaultSize) ==
+
+    fiberGet.occupy()
+
+    Thread.sleep(1000)
+    fiberGet.release()
+
+  }
+
 
 }

@@ -104,9 +104,10 @@ private[sql] class FiberCacheManager(
   private val GUAVA_CACHE = "guava"
   private val SIMPLE_CACHE = "simple"
   private val NO_EVICT_CACHE = "noevict"
-  private val DEFAULT_CACHE_STRATEGY = GUAVA_CACHE
-
   private val VMEM_CACHE = "vmem"
+  private val EXTERNAL_CACHE = "external"
+
+  private val DEFAULT_CACHE_STRATEGY = GUAVA_CACHE
 
   private var _dataCacheCompressEnable = sparkEnv.conf.get(
     OapConf.OAP_ENABLE_DATA_FIBER_CACHE_COMPRESSION)
@@ -119,8 +120,16 @@ private[sql] class FiberCacheManager(
   def dataCacheCompressionCodec: String = _dataCacheCompressionCodec
   def dataCacheCompressionSize: Int = _dataCacheCompressionSize
 
+  def isPuttableCache: Boolean = {
+    isVmemCache || isExternalCache
+  }
+
   def isVmemCache: Boolean = {
     sparkEnv.conf.get("spark.oap.cache.strategy", DEFAULT_CACHE_STRATEGY).equals(VMEM_CACHE)
+  }
+
+  def isExternalCache: Boolean = {
+    sparkEnv.conf.get("spark.oap.cache.strategy", DEFAULT_CACHE_STRATEGY).equals(EXTERNAL_CACHE)
   }
 
   private val cacheBackend: OapCache = {
@@ -142,6 +151,8 @@ private[sql] class FiberCacheManager(
         memoryManager.cacheGuardianMemory)
     } else if (cacheName.equals(VMEM_CACHE)) {
       new VMemCache()
+    } else if (cacheName.equals(EXTERNAL_CACHE)) {
+      new ExternalCache()
     } else {
       throw new OapException(s"Unsupported cache strategy $cacheName")
     }
@@ -158,6 +169,11 @@ private[sql] class FiberCacheManager(
     logDebug(s"Getting Fiber: $fiber")
     cacheBackend.get(fiber)
   }
+
+  def put(fiber: FiberCache): Unit = {
+    cacheBackend.put(fiber)
+  }
+
   // only for unit test
   def setCompressionConf(dataEnable: Boolean = false,
       dataCompressCodec: String = "SNAPPY"): Unit = {

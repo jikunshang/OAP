@@ -414,6 +414,13 @@ object OapConf {
       .doc("To indicate the initial paths for aep cache")
       .stringConf
       .createWithDefault("/mnt/pmem0/spark/,/mnt/pmem1/spark/")
+  val OAP_FIBERCACHE_EXTERNAL_STORE_PATH =
+    SqlConfAdapter.buildConf("spark.sql.oap.fiberCache.store.path")
+      .internal()
+      .doc("Used to set external store path for plasma. It's a Unix Socket which plasma server " +
+        "will listen")
+      .stringConf
+      .createWithDefault("/tmp/plasmaStore")
 
 /*  val OAP_AEP_INITIAL_SIZE =
     SqlConfAdapter.buildConf("spark.oap.memory.aep.initial.size")
