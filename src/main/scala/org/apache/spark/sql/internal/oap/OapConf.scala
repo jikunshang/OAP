@@ -126,6 +126,27 @@ object OapConf {
       .doubleConf
       .createWithDefault(0.7)
 
+  val OAP_FIBERCACHE_ASYNC_WRITE =
+    SqlConfAdapter.buildConf("spark.sql.oap.fiberCache.async.write.enable")
+    .internal()
+    .doc("whether enable async write when get fibers from vmemcache")
+    .booleanConf
+    .createWithDefault(false)
+
+  val OAP_FIBERCACHE_ASYNC_WRITE_THREAD_NUM =
+    SqlConfAdapter.buildConf("spark.sql.oap.fiberCache.async.write.thread.num")
+      .internal()
+      .doc("async write thread nums when get fibers from vmemcache")
+      .intConf
+      .createWithDefault(16)
+
+  val OAP_FIBERCACHE_ASYNC_WRITE_BATCH_SIZE =
+    SqlConfAdapter.buildConf("spark.sql.oap.fiberCache.async.write.batch.size")
+      .internal()
+      .doc("async write batch size when get fibers from vmemcache")
+      .longConf
+      .createWithDefault(1048576)
+
   val OAP_DATAFIBER_USE_FIBERCACHE_RATIO =
     SqlConfAdapter.buildConf("spark.sql.oap.dataCache.use.fiberCache.ratio")
       .internal()

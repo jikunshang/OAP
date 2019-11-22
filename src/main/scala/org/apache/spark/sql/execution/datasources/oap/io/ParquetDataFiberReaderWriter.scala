@@ -44,6 +44,7 @@ object ParquetDataFiberWriter extends Logging {
   def dumpToCache(column: OnHeapColumnVector, total: Int,
                   fiberId: FiberId = null): FiberCache = {
     def putIntoVmemCache(fiber: FiberCache) = {
+      fiber.asyncWriteOffset(fiber.getOccupiedSize())
       logDebug(s"vmemcacheput params: fiberkey size: ${fiberId.toFiberKey().length}," +
         s"addr: ${fiber.getBaseOffset}, length: ${fiber.getOccupiedSize().toInt} ")
       val startTime = System.currentTimeMillis()
@@ -52,7 +53,6 @@ object ParquetDataFiberWriter extends Logging {
         0, fiber.getOccupiedSize().toInt)
       logDebug(s"Vmemcache_put returns $put ," +
         s"takes ${System.currentTimeMillis() - startTime} ms ")
-      fiber.asyncWriteOffset(fiber.getOccupiedSize())
     }
 
     val header = ParquetDataFiberHeader(column, total)
@@ -463,6 +463,7 @@ class ParquetDataFiberReader(address: Long, dataType: DataType, total: Int,
    * Read ParquetDataFiberHeader and dictionary from data fiber.
    */
   private def readRowGroupMetas(): Unit = {
+    waitAsyncWrite(fiber, ParquetDataFiberHeader.defaultSize)
     header = ParquetDataFiberHeader(address)
     header match {
       case ParquetDataFiberHeader(_, _, 0) =>
@@ -471,9 +472,11 @@ class ParquetDataFiberReader(address: Long, dataType: DataType, total: Int,
         dictionary = null
       case ParquetDataFiberHeader(true, false, dicLength) =>
         val dicNativeAddress = address + ParquetDataFiberHeader.defaultSize + 4L * total
+        waitAsyncWrite(fiber, ParquetDataFiberHeader.defaultSize + 4 * total)
         dictionary =
           new ParquetDictionaryWrapper(readDictionary(dataType, dicLength, dicNativeAddress))
       case ParquetDataFiberHeader(false, false, dicLength) =>
+        waitAsyncWrite(fiber, ParquetDataFiberHeader.defaultSize + 1 * total + 4 * total)
         val dicNativeAddress = address + ParquetDataFiberHeader.defaultSize + 1 * total + 4L * total
         dictionary =
           new ParquetDictionaryWrapper(readDictionary(dataType, dicLength, dicNativeAddress))

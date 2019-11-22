@@ -26,8 +26,10 @@ import scala.collection.JavaConverters._
 import com.google.common.cache._
 import sun.nio.ch.DirectBuffer
 
+import org.apache.spark.SparkEnv
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.execution.datasources.OapException
+import org.apache.spark.sql.internal.oap.OapConf
 import org.apache.spark.sql.oap.OapRuntime
 import org.apache.spark.sql.types.LongType
 import org.apache.spark.unsafe.{Platform, VMEMCacheJNI}
@@ -204,11 +206,21 @@ class VMemCache extends OapCache with Logging {
   private var cacheTotalCount: Long = 0
   private var cacheEvictCount: Long = 0
   private var cacheTotalSize: Long = 0
+  private var topOffheapUsed: Long = 0
   // We don't bother the memory use of Simple Cache
   private val cacheGuardian = new CacheGuardian(Int.MaxValue)
   cacheGuardian.start()
 
-  lazy val threadPool: ExecutorService = Executors.newFixedThreadPool(16)
+  val conf = SparkEnv.get.conf
+  val isAsyncWrite = conf.getBoolean(OapConf.OAP_FIBERCACHE_ASYNC_WRITE.key,
+    OapConf.OAP_FIBERCACHE_ASYNC_WRITE.defaultValue.get)
+  val asyncWriteThreadNum = conf.getInt(OapConf.OAP_FIBERCACHE_ASYNC_WRITE_THREAD_NUM.key,
+    OapConf.OAP_FIBERCACHE_ASYNC_WRITE_THREAD_NUM.defaultValue.get)
+  val asyncWriteBatch = conf.getLong(OapConf.OAP_FIBERCACHE_ASYNC_WRITE_BATCH_SIZE.key,
+    OapConf.OAP_FIBERCACHE_ASYNC_WRITE_BATCH_SIZE.defaultValue.get)
+  logInfo(s"Async get Fibers is $isAsyncWrite, thread num is $asyncWriteThreadNum," +
+    s" batch size is $asyncWriteBatch")
+  lazy val threadPool: ExecutorService = Executors.newFixedThreadPool(24)
 
   var fiberSet = scala.collection.mutable.Set[FiberId]()
   override def get(fiber: FiberId): FiberCache = {
@@ -221,53 +233,47 @@ class VMemCache extends OapCache with Logging {
       cacheMissCount.addAndGet(1)
       val fiberCache = cache(fiber)
       fiberSet.add(fiber)
-      incFiberCountAndSize(fiber, 1, fiberCache.size())
       fiberCache.occupy()
-      decFiberCountAndSize(fiber, 1, fiberCache.size())
       cacheGuardian.addRemovalFiber(fiber, fiberCache)
       fiberCache
     } else { // cache hit
       cacheHitCount.addAndGet(1)
       val length = res
       val fiberCache = emptyDataFiber(length)
-      val startTime = System.currentTimeMillis()
-      val get = VMEMCacheJNI.getNative(fiberKey.getBytes(), null,
-        0, fiberKey.length, fiberCache.getBaseOffset, 0, fiberCache.size().toInt)
-      logDebug(s"second getNative require ${length} bytes. " +
-        s"returns $get bytes, takes ${System.currentTimeMillis() - startTime} ms")
 
       // if needs params, will be fiberCache, fiberId, dataLength
       class asyncGetThread extends Runnable {
         override def run(): Unit = {
-          logDebug("start async get")
-          val startTime = System.currentTimeMillis()
-          val batchSize = 1024 * 1024
-          val batches = length / batchSize
-          val batchLeft = length % batchSize
-          for (i <- 0 until batches.toInt) {
-            val get = VMEMCacheJNI.getNative(fiberKey.getBytes(), null,
-              0, fiberKey.length, fiberCache.getBaseOffset + i * batchSize,
-              i * batchSize, batchSize)
+          val startTime = System.nanoTime()
+          val batchSize = asyncWriteBatch
+          val batches: Long = length / batchSize
+          val batchLeft: Long = length % batchSize
+          for (i: Long <- 0L until batches) {
+            VMEMCacheJNI.getNative(fiberKey.getBytes(), null,
+              0, fiberKey.getBytes().length, fiberCache.getBaseOffset + i * batchSize,
+              (i * batchSize).toInt, batchSize.toInt)
             fiberCache.asyncWriteOffset(batchSize)
           }
-          val get = VMEMCacheJNI.getNative(fiberKey.getBytes(), null,
-            0, fiberKey.length, fiberCache.getBaseOffset + batches * batchSize,
-             batches * batchSize, batchLeft.toInt)
+          VMEMCacheJNI.getNative(fiberKey.getBytes(), null,
+            0, fiberKey.getBytes().length, fiberCache.getBaseOffset + batches * batchSize,
+             (batches * batchSize).toInt, batchLeft.toInt)
           fiberCache.asyncWriteOffset(batchLeft)
-          logDebug(s"async getNative total takes ${System.currentTimeMillis() - startTime} ms")
+          val duration = (System.nanoTime() - startTime)
+          logDebug(s"async getNative total takes ${duration} ns")
+          cacheTotalGetTime.addAndGet(duration)
         }
       }
-//      if(asyncIsOn) {
-      if(true) {
+      if(isAsyncWrite) {
         threadPool.execute(new asyncGetThread())
       } else {
-        val startTime = System.currentTimeMillis()
-        val get = VMEMCacheJNI.getNative(fiberKey.getBytes(), null,
-          0, fiberKey.length, fiberCache.getBaseOffset, 8, fiberCache.size().toInt)
-        val duration = System.currentTimeMillis() - startTime
-        logDebug(s"second getNative require ${length} bytes. " +
-          s"returns $get bytes, takes ${duration} ms")
+        val startTime = System.nanoTime()
+        val get = VMEMCacheJNI.getNative(fiberKey.getBytes(), null, 0, fiberKey.getBytes().length,
+          fiberCache.getBaseOffset, 0, fiberCache.size().toInt)
+        val duration = (System.nanoTime() - startTime)
+        logDebug(s"getNative require ${length} bytes. " +
+          s"returns $get bytes, takes ${duration} ns")
         cacheTotalGetTime.addAndGet(duration)
+        fiberCache.asyncWriteOffset(fiberCache.size())
       }
       fiberCache.fiberId = fiber
       fiberCache.occupy()
