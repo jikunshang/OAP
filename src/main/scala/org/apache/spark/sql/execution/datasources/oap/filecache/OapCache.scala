@@ -27,6 +27,7 @@ import com.google.common.cache._
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.execution.datasources.OapException
 import org.apache.spark.sql.oap.OapRuntime
+import org.apache.spark.unsafe.VMEMCacheJNI
 import org.apache.spark.util.Utils
 
 trait OapCache {
@@ -70,7 +71,7 @@ trait OapCache {
 
   protected def cache(fiber: FiberId): FiberCache = {
     val cache = fiber match {
-      case DataFiberId(file, columnIndex, rowGroupId) => file.cache(rowGroupId, columnIndex)
+      case DataFiberId(file, columnIndex, rowGroupId) => file.cache(rowGroupId, columnIndex, fiber)
       case BTreeFiberId(getFiberData, _, _, _) => getFiberData.apply()
       case BitmapFiberId(getFiberData, _, _, _) => getFiberData.apply()
       case TestDataFiberId(getFiberData, _) => getFiberData.apply()
@@ -190,6 +191,113 @@ class SimpleOapCache extends OapCache with Logging {
 
   override def pendingFiberCount: Int = cacheGuardian.pendingFiberCount
 }
+
+class VMemCache extends OapCache with Logging {
+  private def emptyDataFiber(fiberLength: Long): FiberCache =
+    OapRuntime.getOrCreate.memoryManager.getEmptyDataFiberCache(fiberLength)
+  private val cacheHitCount: AtomicLong = new AtomicLong(0)
+  private val cacheMissCount: AtomicLong = new AtomicLong(0)
+  private val cacheTotalGetTime: AtomicLong = new AtomicLong(0)
+  private var cacheTotalCount: Long = 0
+  private var cacheEvictCount: Long = 0
+  private var cacheTotalSize: Long = 0
+  // We don't bother the memory use of Simple Cache
+  private val cacheGuardian = new CacheGuardian(Int.MaxValue)
+  cacheGuardian.start()
+  var fiberSet = scala.collection.mutable.Set[FiberId]()
+  override def get(fiber: FiberId): FiberCache = {
+    val fiberKey = fiber.toFiberKey()
+    val startTime = System.currentTimeMillis()
+    val res = VMEMCacheJNI.exist(fiberKey.getBytes(), null, 0, fiberKey.getBytes().length)
+    logDebug(s"vmemcache.exist return $res ," +
+      s" takes ${System.currentTimeMillis() - startTime} ms")
+    if (res <= 0) {
+      cacheMissCount.addAndGet(1)
+      val fiberCache = cache(fiber)
+      fiberSet.add(fiber)
+      incFiberCountAndSize(fiber, 1, fiberCache.size())
+      fiberCache.occupy()
+      decFiberCountAndSize(fiber, 1, fiberCache.size())
+      cacheGuardian.addRemovalFiber(fiber, fiberCache)
+      fiberCache
+    } else { // cache hit
+      cacheHitCount.addAndGet(1)
+      val length = res
+      val fiberCache = emptyDataFiber(length)
+      val startTime = System.currentTimeMillis()
+      val get = VMEMCacheJNI.getNative(fiberKey.getBytes(), null,
+        0, fiberKey.length, fiberCache.getBaseOffset, 0, fiberCache.size().toInt)
+      logDebug(s"second getNative require ${length} bytes. " +
+        s"returns $get bytes, takes ${System.currentTimeMillis() - startTime} ms")
+      fiberCache.fiberId = fiber
+      fiberCache.occupy()
+      cacheGuardian.addRemovalFiber(fiber, fiberCache)
+      fiberCache
+    }
+  }
+
+  override def getIfPresent(fiber: FiberId): FiberCache = null
+
+  override def getFibers: Set[FiberId] = {
+    val tmpFiberSet = fiberSet
+    // todo: we can implement a VmemcacheJNI.exist(keys:byte[][])
+    for(fibId <- tmpFiberSet) {
+      val fiberKey = fibId.toFiberKey()
+      val get = VMEMCacheJNI.exist(fiberKey.getBytes(), null, 0, fiberKey.getBytes().length)
+      if(get <=0 ) {
+        fiberSet.remove(fibId)
+        logDebug(s"$fiberKey is removed.")
+      } else {
+        logDebug(s"$fiberKey is still stored.")
+      }
+    }
+    // logInfo(fiberSet.toString());
+    fiberSet.toSet
+  }
+
+  override def invalidate(fiber: FiberId): Unit = {}
+
+  override def invalidateAll(fibers: Iterable[FiberId]): Unit = {}
+
+  override def cacheSize: Long = 0
+
+  override def cacheStats: CacheStats = {
+    val status = new Array[Long](3)
+    VMEMCacheJNI.status(status)
+    cacheEvictCount = status(0)
+    cacheTotalCount = status(1)
+    cacheTotalSize = status(2)
+    logDebug(s"Current status is evict:$cacheEvictCount," +
+      s" count:$cacheTotalCount, size:$cacheTotalSize")
+    CacheStats(
+      // fiberSet.size, // dataFiberCount
+      cacheTotalCount, // dataFiberCount
+      cacheTotalSize, // dataFiberSize JNIGet
+      0, // indexFiberCount
+      0, // indexFiberSize
+      cacheGuardian.pendingFiberCount, // pendingFiberCount
+      cacheGuardian.pendingFiberSize, // pendingFiberSize
+      cacheHitCount.get(), // dataFiberHitCount
+      cacheMissCount.get(), // dataFiberMissCount
+      cacheHitCount.get(), // dataFiberLoadCount
+      cacheTotalGetTime.get(), // dataTotalLoadTime
+      cacheEvictCount, // dataEvictionCount
+      0, // indexFiberHitCount
+      0, // indexFiberMissCount
+      0, // indexFiberLoadCount
+      0, // indexFiberLoadTime
+      0) // indexEvictionCount JNIGet
+  }
+
+  override def cacheCount: Long = 0
+
+  override def pendingFiberCount: Int = 0
+
+  override def cleanUp: Unit = {
+    super.cleanUp
+  }
+}
+
 
 class GuavaOapCache(
     dataCacheMemory: Long,

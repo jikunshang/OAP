@@ -209,10 +209,10 @@ private[oap] case class OrcDataFile(
   override def getDataFileMeta(): DataFileMeta =
     new OrcDataFileMeta(filePath, configuration)
 
-  override def cache(groupId: Int, fiberId: Int): FiberCache = {
+  override def cache(groupId: Int, columnIndex: Int, fiberId: FiberId = null): FiberCache = {
     val fileSchema = fileReader.getSchema
     val columnTypeDesc = TypeDescription.createStruct()
-      .addField(fileSchema.getFieldNames.get(fiberId), fileSchema.getChildren.get(fiberId))
+      .addField(fileSchema.getFieldNames.get(columnIndex), fileSchema.getChildren.get(columnIndex))
     options.schema(columnTypeDesc)
     recordReader = new RecordReaderCacheImpl(reader.asInstanceOf[ReaderImpl], options)
 
@@ -223,7 +223,7 @@ private[oap] case class OrcDataFile(
     recordReader.close()
 
     val fromColumn = vectorizedRowBatch.cols(0)
-    val field = schema.fields(fiberId)
+    val field = schema.fields(columnIndex)
     val toColumn = new OnHeapColumnVector(rowCount, field.dataType)
     if (fromColumn.isRepeating) {
       OrcCacheReader.putRepeatingValues(rowCount, field, fromColumn, toColumn)

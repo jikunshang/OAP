@@ -35,7 +35,7 @@ case class FiberCache(fiberData: MemoryBlockHolder) extends Logging {
   // TODO: make it immutable
   var fiberId: FiberId = _
 
-  val DISPOSE_TIMEOUT = 3000
+  val DISPOSE_TIMEOUT = 100
 
   // record every batch startAddress, endAddress and the boolean of whether compressed
   // and the child column vector length in CompressedBatchFiberInfo
@@ -75,6 +75,7 @@ case class FiberCache(fiberData: MemoryBlockHolder) extends Logging {
             // TODO: use lock/sync-obj to leverage the concurrency APIs instead of explicit sleep.
             Thread.sleep(100)
           } else {
+            logDebug(s"refCount = 0 now")
             if (writeLock.tryLock(200, TimeUnit.MILLISECONDS)) {
               try {
                 if (refCount == 0) {
