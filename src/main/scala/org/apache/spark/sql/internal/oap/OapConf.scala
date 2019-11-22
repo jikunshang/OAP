@@ -17,6 +17,7 @@
 
 package org.apache.spark.sql.internal.oap
 
+import org.apache.spark.network.util.ByteUnit
 import org.apache.spark.sql.oap.adapter.SqlConfAdapter
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -407,4 +408,38 @@ object OapConf {
       .doc("The oap data fiber compression unit length")
       .intConf
       .createWithDefault(4096)
+  val OAP_AEP_INITIAL_PATHS =
+    SqlConfAdapter.buildConf("spark.oap.memory.aep.initial.paths")
+      .internal()
+      .doc("To indicate the initial paths for aep cache")
+      .stringConf
+      .createWithDefault("/mnt/pmem0/spark/,/mnt/pmem1/spark/")
+
+/*  val OAP_AEP_INITIAL_SIZE =
+    SqlConfAdapter.buildConf("spark.oap.memory.aep.initial.size")
+      .internal()
+      .doc("AEP initial size, default is 128G")
+      .stringConf
+      .createWithDefault("128g")
+
+  val DCPM_CACHE_BACKEND =
+    SqlConfAdapter.buildConf("spark.oap.dcpm.cache.backend")
+      .internal()
+      .doc("Use Memkind/Vmemcache as backend for Intel Optane DC persistent memory.")
+      .stringConf
+      .createWithDefault("memkind") */
+
+  val SIZE_OF_NUMA_NODES =
+    SqlConfAdapter.buildConf("spark.sql.numa.nodes.size")
+      .doc("To indicate the total NUMA nodes of the hardware.")
+      .intConf
+      .createWithDefault(2)
+
+  val OAP_AEP_USEFUL_RATION =
+    SqlConfAdapter.buildConf("spark.oap.memory.aep.useful.ration")
+      .internal()
+      .doc("The useful size of AEP for OAP cache")
+      .doubleConf
+      .createWithDefault(1.0)
+
 }

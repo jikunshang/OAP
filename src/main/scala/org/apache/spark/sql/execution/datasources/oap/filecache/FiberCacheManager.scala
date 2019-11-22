@@ -62,7 +62,8 @@ private[filecache] class CacheGuardian(maxMemory: Long) extends Thread with Logg
     _pendingFiberCapacity.addAndGet(fiberCache.getOccupiedSize())
     removalPendingQueue.offer((fiber, fiberCache))
     if (_pendingFiberCapacity.get() > maxMemory) {
-      logWarning("Fibers pending on removal use too much memory, " +
+      // TODO:change back logWarning
+      logDebug("Fibers pending on removal use too much memory, " +
           s"current: ${_pendingFiberCapacity.get()}, max: $maxMemory")
     }
   }
@@ -83,7 +84,8 @@ private[filecache] class CacheGuardian(maxMemory: Long) extends Thread with Logg
       logDebug(s"Waiting fiber to be released timeout. Fiber: $fiberId")
       removalPendingQueue.offer((fiberId, cache))
       if (_pendingFiberCapacity.get() > maxMemory) {
-        logWarning("Fibers pending on removal use too much memory, " +
+        // TODO:change back
+        logDebug("Fibers pending on removal use too much memory, " +
             s"current: ${_pendingFiberCapacity.get()}, max: $maxMemory")
       }
     } else {
@@ -104,6 +106,8 @@ private[sql] class FiberCacheManager(
   private val NO_EVICT_CACHE = "noevict"
   private val DEFAULT_CACHE_STRATEGY = GUAVA_CACHE
 
+  private val VMEM_CACHE = "vmem"
+
   private var _dataCacheCompressEnable = sparkEnv.conf.get(
     OapConf.OAP_ENABLE_DATA_FIBER_CACHE_COMPRESSION)
   private var _dataCacheCompressionCodec = sparkEnv.conf.get(
@@ -114,6 +118,10 @@ private[sql] class FiberCacheManager(
   def dataCacheCompressEnable: Boolean = _dataCacheCompressEnable
   def dataCacheCompressionCodec: String = _dataCacheCompressionCodec
   def dataCacheCompressionSize: Int = _dataCacheCompressionSize
+
+  def isVmemCache: Boolean = {
+    sparkEnv.conf.get("spark.oap.cache.strategy", DEFAULT_CACHE_STRATEGY).equals(VMEM_CACHE)
+  }
 
   private val cacheBackend: OapCache = {
     val cacheName = sparkEnv.conf.get("spark.oap.cache.strategy", DEFAULT_CACHE_STRATEGY)
@@ -132,6 +140,8 @@ private[sql] class FiberCacheManager(
     } else if (cacheName.equals(NO_EVICT_CACHE)) {
       new NonEvictPMCache(20, memoryManager.dataCacheMemory,
         memoryManager.cacheGuardianMemory)
+    } else if (cacheName.equals(VMEM_CACHE)) {
+      new VMemCache()
     } else {
       throw new OapException(s"Unsupported cache strategy $cacheName")
     }

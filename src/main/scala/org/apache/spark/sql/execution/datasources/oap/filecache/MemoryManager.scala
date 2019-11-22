@@ -18,19 +18,23 @@
 package org.apache.spark.sql.execution.datasources.oap.filecache
 
 import java.io.File
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 
 import org.apache.hadoop.fs.FSDataInputStream
 
-import org.apache.spark.SparkEnv
+import org.apache.spark.{SparkEnv, SparkException}
 import org.apache.spark.internal.Logging
 import org.apache.spark.memory.MemoryMode
 import org.apache.spark.sql.execution.datasources.OapException
 import org.apache.spark.sql.execution.datasources.oap.utils.PersistentMemoryConfigUtils
 import org.apache.spark.sql.internal.oap.OapConf
 import org.apache.spark.storage.{BlockManager, TestBlockId}
-import org.apache.spark.unsafe.{PersistentMemoryPlatform, Platform}
+import org.apache.spark.unsafe.{PersistentMemoryPlatform, Platform, VMEMCacheJNI}
+import org.apache.spark.unsafe.memory.{MemoryAllocator, MemoryBlock}
+import org.apache.spark.unsafe.types.UTF8String
 import org.apache.spark.util.Utils
+
 
 object CacheEnum extends Enumeration {
   type CacheEnum = Value
@@ -126,7 +130,7 @@ private[sql] abstract class MemoryManager {
   def stop(): Unit = {}
 }
 
-private[sql] object MemoryManager {
+private[sql] object MemoryManager extends Logging {
   /**
    * Dummy block id to acquire memory from [[org.apache.spark.memory.MemoryManager]]
    *
@@ -150,6 +154,7 @@ private[sql] object MemoryManager {
       case "offheap" => new OffHeapMemoryManager(sparkEnv)
       case "pm" => new PersistentMemoryManager(sparkEnv)
       case "hybrid" => new HybridMemoryManager(sparkEnv)
+      case "vmemcache" => new OffHeapVmemCacheMemoryManager(sparkEnv)
       case "mix" => if (indexDataSeparationEnable) {
         new MixMemoryManager(sparkEnv)
       } else {
@@ -201,7 +206,7 @@ private[filecache] class OffHeapMemoryManager(sparkEnv: SparkEnv)
   }
 
   // TODO: Atomic is really needed?
-  private val _memoryUsed = new AtomicLong(0)
+  protected val _memoryUsed = new AtomicLong(0)
 
   override def memoryUsed: Long = _memoryUsed.get()
 
@@ -212,6 +217,7 @@ private[filecache] class OffHeapMemoryManager(sparkEnv: SparkEnv)
   override def cacheGuardianMemory: Long = _cacheGuardianMemory
 
   override private[filecache] def allocate(size: Long): MemoryBlockHolder = {
+    val startTime = System.currentTimeMillis()
     val address = Platform.allocateMemory(size)
     _memoryUsed.getAndAdd(size)
     logDebug(s"request allocate $size memory, actual occupied size: " +
@@ -222,6 +228,7 @@ private[filecache] class OffHeapMemoryManager(sparkEnv: SparkEnv)
 
   override private[filecache] def free(block: MemoryBlockHolder): Unit = {
     assert(block.baseObject == null)
+    val startTime = System.currentTimeMillis()
     Platform.freeMemory(block.baseOffset)
     _memoryUsed.getAndAdd(-block.occupiedSize)
     logDebug(s"freed ${block.occupiedSize} memory, used: $memoryUsed")
@@ -230,6 +237,78 @@ private[filecache] class OffHeapMemoryManager(sparkEnv: SparkEnv)
   override def stop(): Unit = {
     memoryManager.releaseStorageMemory(oapMemory, MemoryMode.OFF_HEAP)
   }
+}
+
+private[filecache] class OffHeapVmemCacheMemoryManager(sparkEnv: SparkEnv)
+  extends OffHeapMemoryManager(sparkEnv) with Logging{
+
+  override private[filecache] def allocate(size: Long): MemoryBlockHolder = {
+    val startTime = System.currentTimeMillis()
+    val occupiedSize = size
+    val address = Platform.allocateMemory(occupiedSize)
+    _memoryUsed.getAndAdd(occupiedSize)
+    logDebug(s"memory manager allocate takes" +
+      s" ${System.currentTimeMillis() - startTime} ms, " +
+      s"request allocate $size memory, actual occupied size: " +
+      s"${occupiedSize}, used: $memoryUsed")
+
+    // For OFF_HEAP_VMEM, occupied size equals size + 8.
+    MemoryBlockHolder(CacheEnum.GENERAL, null, address, size,
+      occupiedSize, "DRAM")
+  }
+
+  override private[filecache] def free(block: MemoryBlockHolder): Unit = {
+    val startTime = System.currentTimeMillis()
+    assert(block.baseObject == null)
+    Platform.freeMemory(block.baseOffset )
+    _memoryUsed.getAndAdd(-block.occupiedSize)
+    logDebug(s"memory manager free takes" +
+      s" ${System.currentTimeMillis() - startTime} ms" +
+      s"freed ${block.occupiedSize} memory, used: $memoryUsed")
+  }
+
+  @volatile private var initialized = false
+  private val lock = new Object
+  private val conf = SparkEnv.get.conf
+  private val initialSizeStr = conf.get(OapConf.OAP_FIBERCACHE_PERSISTENT_MEMORY_INITIAL_SIZE).trim
+  private val vmInitialSize = Utils.byteStringAsBytes(initialSizeStr)
+  require(vmInitialSize > 0, "AEP initial size must be greater than zero")
+  def initializeVMEMCache(): Unit = {
+    if (!initialized) {
+      lock.synchronized {
+        if (!initialized) {
+          val sparkEnv = SparkEnv.get
+          val conf = sparkEnv.conf
+          // The NUMA id should be set when the executor process start up. However, Spark don't
+          // support NUMA binding currently.
+          var numaId = conf.getInt("spark.executor.numa.id", -1)
+          val numaNodesSize = conf.get(OapConf.SIZE_OF_NUMA_NODES)
+          val executorId = sparkEnv.executorId.toInt
+          if (numaId == -1) {
+            logWarning(s"Executor ${executorId} is not bind with NUMA. It" +
+              s" would be better to bind executor with NUMA when cache data to " +
+              s"Intel Optane DC persistent memory.")
+            // Just round the executorId to the total NUMA number.
+            // TODO: improve here
+            numaId = executorId % numaNodesSize
+          }
+
+          val initialPath = conf.get(OapConf.OAP_AEP_INITIAL_PATHS).split(",")(numaId)
+          val fullPath = Utils.createTempDir(initialPath + File.separator + executorId)
+          require(fullPath.isDirectory(), "VMEMCache initialize path must be a directory")
+          val success = VMEMCacheJNI.initialize(fullPath.getCanonicalPath, vmInitialSize);
+          if (success != 0) {
+            throw new SparkException("Failed to call VMEMCacheJNI.initialize")
+          }
+          logInfo(s"Executors ${executorId}: VMEMCache initialize path:" +
+            s" ${fullPath.getCanonicalPath}, size: ${1.0 * vmInitialSize / 1024 / 1024 / 1024}GB")
+          initialized = true
+        }
+      }
+    }
+  }
+
+  initializeVMEMCache()
 }
 
 /**
@@ -388,7 +467,6 @@ private[filecache] class HybridMemoryManager(sparkEnv: SparkEnv)
   }
 }
 
-
 /**
  * A memory manager contains different sub memory manager for index and data.
  */
@@ -409,6 +487,7 @@ private[filecache] class MixMemoryManager(sparkEnv: SparkEnv)
         .toLowerCase match {
         case "offheap" => new OffHeapMemoryManager(sparkEnv)
         case "pm" => new PersistentMemoryManager(sparkEnv)
+        case "vmemcache" => new OffHeapVmemCacheMemoryManager(sparkEnv)
         case other => throw new UnsupportedOperationException(
           s"The memory manager: ${other} is not supported now")
       }
@@ -420,6 +499,7 @@ private[filecache] class MixMemoryManager(sparkEnv: SparkEnv)
         .toLowerCase match {
         case "offheap" => new OffHeapMemoryManager(sparkEnv)
         case "pm" => new PersistentMemoryManager(sparkEnv)
+        case "vmemcache" => new OffHeapVmemCacheMemoryManager(sparkEnv)
         case other => throw new UnsupportedOperationException(
           s"The memory manager: ${other} is not supported now")
       }
