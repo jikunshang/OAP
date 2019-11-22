@@ -43,6 +43,14 @@ case class FiberCache(fiberData: MemoryBlockHolder) extends Logging {
   // record whether the fiber is compressed
   var fiberCompressed: Boolean = false
 
+  private val asyncWriteOffset = new AtomicLong(0)
+  def getAsyncWriteOffset: Long = asyncWriteOffset.get()
+  def asyncWriteOffset(batchSize: Long): Unit = asyncWriteOffset.addAndGet(batchSize)
+
+//  if(!asyncIsOn) {
+//    asyncWriteOffset.set(fiberData.length)
+//  }
+
   // We use readLock to lock occupy. _refCount need be atomic to make sure thread-safe
   protected val _refCount = new AtomicLong(0)
   def refCount: Long = _refCount.get()

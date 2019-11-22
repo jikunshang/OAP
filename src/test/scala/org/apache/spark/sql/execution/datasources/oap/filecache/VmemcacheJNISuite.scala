@@ -133,4 +133,59 @@ class VmemcacheJNISuite extends SharedOapContext{
     assert(status(2) >= 400)
 
   }
+
+  test(s"vmemcache_get overhead") {
+    val path = "/mnt/pmem0/spark"
+    val initializeSize = 1024L * 1024 * 1024
+    val success = VMEMCacheJNI.initialize(path, initializeSize)
+
+    val SIZE_1M = 1024 * 1024
+    val SIZE_10M = 10 * SIZE_1M
+    val threadNum = 4
+
+    val threadArray = new Array[Thread](threadNum)
+    for( tid <- 0 until threadNum) {
+      val t = new Thread(new testThread(tid))
+      threadArray(tid) = t
+      t.start()
+    }
+
+    threadArray.foreach(t => t.join())
+
+    class testThread(id: Int) extends Runnable {
+      override def run: Unit = {
+        val key = "This is key " + id.toString
+        val bbPut = ByteBuffer.allocateDirect(SIZE_10M)
+        for (i <- 0 until bbPut.limit() / LongType.defaultSize) {
+          bbPut.putLong(i.toLong)
+        }
+        var startTime = 0L
+        VMEMCacheJNI.putNative(key.getBytes(), null, 0, key.getBytes().length,
+          bbPut.asInstanceOf[DirectBuffer].address(), 0, SIZE_10M)
+
+        // 2.get 1MB 10 times
+        val bbGet1M = ByteBuffer.allocateDirect(SIZE_10M)
+        var totalTime: Long = 0
+        val timeArray = new Array[Long](10)
+        for (i <- 0 until 10) {
+          startTime = System.nanoTime()
+          VMEMCacheJNI.getNative(key.getBytes(), null, 0, key.getBytes().length,
+            bbGet1M.asInstanceOf[DirectBuffer].address() + i * SIZE_1M, i*SIZE_1M, SIZE_1M)
+          val endTime = System.nanoTime()
+          totalTime += (endTime - startTime)
+          timeArray(i) = (endTime - startTime)
+        }
+        print(s"ThreadId: ${id} vmemcache get 1M total takes ${totalTime / 1000} us.\n\n")
+
+        // 1.get 10MB direct
+        val bbGet10M = ByteBuffer.allocateDirect(SIZE_10M)
+        startTime = System.nanoTime()
+        VMEMCacheJNI.getNative(key.getBytes(), null, 0, key.getBytes().length,
+        bbGet10M.asInstanceOf[DirectBuffer].address(), 0, SIZE_10M)
+        print(s"threadId: ${id} vmemcache get 10M takes" +
+        s" ${(System.nanoTime() - startTime) / 1000} us.\n\n")
+
+      }
+    }
+  }
 }

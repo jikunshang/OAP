@@ -464,9 +464,8 @@ object ParquetDataFiberCompressedWriter extends Logging {
  * @param total total row count of data fiber.
  */
 class ParquetDataFiberCompressedReader (
-     address: Long, dataType: DataType, total: Int,
-     var fiberCache: FiberCache) extends ParquetDataFiberReader(
-     address = address, dataType = dataType, total = total) {
+     address: Long, dataType: DataType, total: Int, fiberCache: FiberCache)
+  extends ParquetDataFiberReader(address = address, dataType = dataType, total = total, null) {
 
   private var header: ParquetDataFiberCompressedHeader = _
 
