@@ -468,6 +468,7 @@ class ExternalCache extends OapCache with Logging {
         val duration = System.nanoTime() - startTime
         logDebug(s"copy from ByteBuffer takes ${duration} ms")
         cacheTotalGetTime.addAndGet(duration)
+        fiberCache.asyncWriteOffset(fiberCache.size())
       }
       fiberCache.occupy()
       cacheGuardian.addRemovalFiber(fiberId, fiberCache)
@@ -483,18 +484,40 @@ class ExternalCache extends OapCache with Logging {
 
   // todo: can be async here
   override def put(fiber: FiberCache) {
-    fiber.occupy()
-    val fiberId = fiber.fiberId
-    val objectId = hash(fiberId.toString)
-    if( !contains(fiberId)) {
-      logDebug(s"Cache miss, put into external cache")
-      val bb: ByteBuffer = plasmaClient.create(objectId, fiber.size().toInt)
-      Platform.copyMemory(null, fiber.getBaseOffset,
-        null, bb.asInstanceOf[DirectBuffer].address(), fiber.size())
-      plasmaClient.seal(objectId)
-      plasmaClient.release(objectId)
+    fiber.asyncWriteOffset(fiber.size())
+    class AsyncPutThread extends Runnable {
+      override def run(): Unit = {
+        fiber.occupy()
+        val fiberId = fiber.fiberId
+        val objectId = hash(fiberId.toString)
+        if( !contains(fiberId)) {
+          logDebug(s"Cache miss, put into external cache")
+          val bb: ByteBuffer = plasmaClient.create(objectId, fiber.size().toInt)
+          Platform.copyMemory(null, fiber.getBaseOffset,
+            null, bb.asInstanceOf[DirectBuffer].address(), fiber.size())
+          plasmaClient.seal(objectId)
+          plasmaClient.release(objectId)
+        }
+        fiber.release()
+      }
     }
-    fiber.release()
+    if(isAsyncWrite) {
+      threadPool.execute(new AsyncPutThread())
+    } else {
+      fiber.occupy()
+      val fiberId = fiber.fiberId
+      val objectId = hash(fiberId.toString)
+      if( !contains(fiberId)) {
+        logDebug(s"Cache miss, put into external cache")
+        val bb: ByteBuffer = plasmaClient.create(objectId, fiber.size().toInt)
+        Platform.copyMemory(null, fiber.getBaseOffset,
+          null, bb.asInstanceOf[DirectBuffer].address(), fiber.size())
+        plasmaClient.seal(objectId)
+        plasmaClient.release(objectId)
+      }
+      fiber.release()
+    }
+
   }
   override def getIfPresent(fiber: FiberId): FiberCache = null
 
@@ -517,7 +540,7 @@ class ExternalCache extends OapCache with Logging {
       cacheGuardian.pendingFiberSize,
       cacheHitCount.get(),
       cacheMissCount.get(),
-      0, 0, 0,
+      cacheHitCount.get(), cacheTotalGetTime.get(), cacheTotalGetTime.get(),
       0, 0, 0, 0, 0 // index fiberCache
     )
   }
