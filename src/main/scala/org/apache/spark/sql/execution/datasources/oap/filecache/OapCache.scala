@@ -384,7 +384,7 @@ class ExternalCache extends OapCache with Logging {
     OapConf.OAP_FIBERCACHE_ASYNC_WRITE_BATCH_SIZE.defaultValue.get)
   logInfo(s"Async get Fibers is $isAsyncWrite, thread num is $asyncWriteThreadNum," +
     s" batch size is $asyncWriteBatch")
-  lazy val threadPool: ExecutorService = Executors.newFixedThreadPool(24)
+  lazy val threadPool: ExecutorService = Executors.newFixedThreadPool(asyncWriteThreadNum)
 
   private var cacheInit: Boolean = false
   def init(): Unit = {

@@ -20,8 +20,8 @@ package org.apache.spark.sql.execution.datasources.oap.filecache
 import java.nio.ByteBuffer
 import java.util.concurrent.{Callable, Executors, TimeUnit}
 
+import org.apache.arrow.plasma
 import sun.nio.ch.DirectBuffer
-
 import org.apache.spark.sql.execution.datasources.OapException
 import org.apache.spark.sql.execution.datasources.oap.io.OapDataFileV1
 import org.apache.spark.sql.oap.OapRuntime
@@ -406,10 +406,6 @@ class FiberCacheManagerSuite extends SharedOapContext {
     cache.put(fiber)
     assert(cache.contains(fiberId1) == true)
 
-//    val fiber = cache.get(fiberId1)
-//    assert (fiber.toArray sameElements data1)
-//
-//    fiber.release()
     Thread.sleep(100)
 
     val fiberGet = cache.get(fiberId1)
@@ -417,7 +413,6 @@ class FiberCacheManagerSuite extends SharedOapContext {
       val get = Platform.getByte(null, fiber.getBaseOffset + i)
       print( get + " ")
     }
-//     assert( Platform.getLong(fiber.getBaseOffset, i*LongType.defaultSize) ==
 
     fiberGet.occupy()
 
@@ -426,5 +421,79 @@ class FiberCacheManagerSuite extends SharedOapContext {
 
   }
 
+  test("external cache benchmark") {
+    val threadNum = 10
+    val objectsInThread = 1
+    val objectIds = new Array[Array[Byte]](threadNum * objectsInThread)
+    val threads = new Array[Thread](threadNum)
+    val cache = new ExternalCache()
+    val plasmaClient = new plasma.PlasmaClient("/tmp/plasmaStore", "", 0)
+    val SIZE_10M = 10 * 1024 * 1024
 
+    class PutThread(threadId: Int) extends Thread {
+      override def run(): Unit = {
+        val data = ByteBuffer.allocateDirect(SIZE_10M)
+        val startTime = System.nanoTime()
+        for (i <- 0 until objectsInThread) {
+          val objId = threadId * objectsInThread + i
+          objectIds(objId) = cache.hash(objId.toString)
+          val bb: ByteBuffer = plasmaClient.create(objectIds(objId), SIZE_10M)
+          Platform.copyMemory(null, data.asInstanceOf[DirectBuffer].address(),
+            null, bb.asInstanceOf[DirectBuffer].address(), SIZE_10M)
+          plasmaClient.seal( objectIds(objId) )
+          plasmaClient.release( objectIds(objId) )
+        }
+        val duration = System.nanoTime() - startTime
+        print(s"thread Id: $threadId put $objectsInThread objects, takes $duration ns." +
+          s" throughput is ${objectsInThread * SIZE_10M / (duration.toDouble / 1000000000)} MB/s\n")
+      }
+    }
+
+    class GetThread(threadId: Int) extends Thread {
+      override def run(): Unit = {
+        val data = ByteBuffer.allocateDirect(SIZE_10M)
+        val startTime = System.nanoTime()
+        for (i <- 0 until objectsInThread) {
+          val objId = threadId * objectsInThread + i
+          objectIds(objId) = cache.hash(objId.toString)
+          val bb: ByteBuffer = plasmaClient.getByteBuffer(objectIds(objId), 2000, false)
+          Platform.copyMemory(null, bb.asInstanceOf[DirectBuffer].address(),
+            null, data.asInstanceOf[DirectBuffer].address(), SIZE_10M)
+        }
+        val duration = System.nanoTime() - startTime
+        print(s"thread Id: $threadId get $objectsInThread objects, takes $duration ns." +
+          s" throughput is ${(objectsInThread * 10 / (duration.toDouble / 1000000000)).toLong}" +
+          s" MB/s\n")
+      }
+    }
+
+    // start Put
+    val putStartTime = System.nanoTime()
+    for( i <- 0 until threadNum) {
+      threads(i) = new PutThread(i)
+      threads(i).run()
+    }
+
+    for( i <- 0 until threadNum) {
+      threads(i).join()
+    }
+    val putDuraion = System.nanoTime() - putStartTime
+    print(s"\ntotal put throughput is " +
+      s"${threadNum * objectsInThread * SIZE_10M / (putDuraion.toDouble / 1000000000)} B/s.\n\n")
+
+    // start Get
+    val getStartTime = System.nanoTime()
+    for( i <- 0 until threadNum) {
+      threads(i) = new GetThread(i)
+      threads(i).run()
+    }
+
+    for( i <- 0 until threadNum) {
+      threads(i).join()
+    }
+    val getDuraion = System.nanoTime() - getStartTime
+    print(s"\ntotal get throughput is " +
+      s"${threadNum * objectsInThread * SIZE_10M / (getDuraion.toDouble / 1000000000)} B/s.\n\n")
+
+  }
 }
