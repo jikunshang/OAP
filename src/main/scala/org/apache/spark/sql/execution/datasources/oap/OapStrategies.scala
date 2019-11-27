@@ -317,7 +317,9 @@ object OapSemiJoinStrategy extends OapStrategy {
 object OapGroupAggregateStrategy extends OapStrategy {
   def apply(plan: LogicalPlan): Seq[SparkPlan] = plan match {
     case PhysicalAggregation(
-    groupingExpressions, aggregateExpressions, resultExpressions, child) =>
+    groupingExpressions, aggExpressions, resultExpressions, child) =>
+      val aggregateExpressions = aggExpressions.map(expr =>
+        expr.asInstanceOf[AggregateExpression])
       val (functionsWithDistinct, _) =
         aggregateExpressions.partition(_.isDistinct)
       if (functionsWithDistinct.map(_.aggregateFunction.children).distinct.length > 1) {

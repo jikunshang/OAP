@@ -39,7 +39,7 @@ class CacheStatusSerDeSuite extends SparkFunSuite {
     bitSet.set(8)
     val bitSetStr = compact(render(CacheStatusSerDe.bitSetToJson(bitSet)))
     assertStringEquals(bitSetStr, CacheStatusSerDeTestStrs.bitSetString)
-    val newBitSet = CacheStatusSerDe.bitSetFromJson(parse(bitSetStr))
+    val newBitSet = CacheStatusSerDe.bitSetFromJson(parse(bitSetStr, true))
     assertBitSetEquals(bitSet, newBitSet)
   }
 
@@ -47,7 +47,7 @@ class CacheStatusSerDeSuite extends SparkFunSuite {
     val dataFileMeta = new OapDataFileMetaV1(
       rowCountInEachGroup = 3, rowCountInLastGroup = 2, groupCount = 3, fieldCount = 3)
     val dataFileMetaStr = compact(render(CacheStatusSerDe.dataFileMetaToJson(dataFileMeta)))
-    val newDataFileMeta = CacheStatusSerDe.dataFileMetaFromJson(parse(dataFileMetaStr))
+    val newDataFileMeta = CacheStatusSerDe.dataFileMetaFromJson(parse(dataFileMetaStr, true))
     assertDataFileMetaEquals(dataFileMeta, newDataFileMeta)
   }
 

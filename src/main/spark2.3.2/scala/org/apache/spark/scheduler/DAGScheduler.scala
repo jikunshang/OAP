@@ -1318,9 +1318,9 @@ class DAGScheduler(
             s" ${task.stageAttemptId} and there is a more recent attempt for that stage " +
             s"(attempt ${failedStage.latestInfo.attemptNumber}) running")
         } else {
-          failedStage.fetchFailedAttemptIds.add(task.stageAttemptId)
+          failedStage.failedAttemptIds.add(task.stageAttemptId)
           val shouldAbortStage =
-            failedStage.fetchFailedAttemptIds.size >= maxConsecutiveStageAttempts ||
+            failedStage.failedAttemptIds.size >= maxConsecutiveStageAttempts ||
             disallowStageRetryForTest
 
           // It is likely that we receive multiple FetchFailed for a single stage (because we have

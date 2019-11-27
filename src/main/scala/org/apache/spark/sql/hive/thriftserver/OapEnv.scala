@@ -48,8 +48,8 @@ private[spark] object OapEnv extends Logging {
         // the default appName [SparkSQLCLIDriver] in cli or beeline.
         val maybeAppName = sparkConf
           .getOption("spark.app.name")
-          .filterNot(_ == classOf[SparkSQLCLIDriver].getName)
-          .filterNot(_ == classOf[HiveThriftServer2].getName)
+//          .filterNot(_ == classOf[SparkSQLCLIDriver].getName)
+//          .filterNot(_ == classOf[HiveThriftServer2].getName)
 
         sparkConf.setAppName(maybeAppName.getOrElse(s"SparkSQL::${Utils.localHostName()}"))
 
@@ -68,8 +68,8 @@ private[spark] object OapEnv extends Logging {
 
       sparkContext.addSparkListener(new OapListener)
 
-      SparkSQLEnv.sparkContext = sparkContext
-      SparkSQLEnv.sqlContext = sqlContext
+//      SparkSQLEnv.sparkContext = sparkContext
+//      SparkSQLEnv.sqlContext = sqlContext
       this.sparkSession = sqlContext.sparkSession
 
       sparkContext.ui.foreach(new OapTab(_))
@@ -90,6 +90,6 @@ private[spark] object OapEnv extends Logging {
 
   /** Cleans up and shuts down the Spark SQL environments. */
   def stop() {
-    SparkSQLEnv.stop()
+//    SparkSQLEnv.stop()
   }
 }

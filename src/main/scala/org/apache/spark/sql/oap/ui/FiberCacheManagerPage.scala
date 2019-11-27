@@ -33,12 +33,12 @@ private[ui] class FiberCacheManagerPage(parent: OapTab) extends WebUIPage("") wi
       <div>
         {
         <div id="active-cms"></div> ++
-          <script src={UIUtils.prependBaseUri("/static/utils.js")}></script> ++
-          <script src={UIUtils.prependBaseUri("/static/oap/oap.js")}></script>
+          <script src={UIUtils.prependBaseUri(request, "/static/utils.js")}></script> ++
+          <script src={UIUtils.prependBaseUri(request, "/static/oap/oap.js")}></script>
         }
       </div>
 
-    UIUtils.headerSparkPage("FiberCacheManager", content, parent, useDataTables = true)
+    UIUtils.headerSparkPage(request, "FiberCacheManager", content, parent, useDataTables = true)
   }
 
 }

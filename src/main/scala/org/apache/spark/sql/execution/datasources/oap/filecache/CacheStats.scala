@@ -181,7 +181,7 @@ object CacheStats extends Logging {
 
   def apply(): CacheStats = CacheStats(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
 
-  def apply(json: String): CacheStats = CacheStats(parse(json))
+  def apply(json: String): CacheStats = CacheStats(parse(json, true))
 
   def apply(json: JValue): CacheStats = CacheStats(
     (json \ "dataFiberCount").extract[Long],
