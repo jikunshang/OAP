@@ -23,7 +23,7 @@ import org.apache.parquet.it.unimi.dsi.fastutil.ints.IntList
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.execution.datasources.OapException
-import org.apache.spark.sql.execution.datasources.oap.filecache.{FiberCache, FiberId}
+import org.apache.spark.sql.execution.datasources.oap.filecache._
 import org.apache.spark.sql.execution.datasources.parquet.ParquetDictionaryWrapper
 import org.apache.spark.sql.execution.vectorized.OnHeapColumnVector
 import org.apache.spark.sql.oap.OapRuntime
@@ -43,6 +43,19 @@ object ParquetDataFiberWriter extends Logging {
 
   def dumpToCache(column: OnHeapColumnVector, total: Int,
                   fiberId: FiberId = null): FiberCache = {
+    val cacheType = OapRuntime.getOrCreate.fiberCacheManager.getCacheType()
+    cacheType match {
+      case _: VMemCache =>
+        dumpToVmemCache(column, total, fiberId)
+      case _: NonEvictPMCache | _: GuavaOapCache =>
+        dumpToMemkindCache(column, total)
+      case other => throw new OapException(s"unsupported cache type for parquet.")
+    }
+  }
+
+  def dumpToVmemCache(column: OnHeapColumnVector, total: Int,
+                  fiberId: FiberId): FiberCache = {
+
     def putIntoVmemCache(fiber: FiberCache) = {
       logDebug(s"vmemcacheput params: fiberkey size: ${fiberId.toFiberKey().length}," +
         s"addr: ${fiber.getBaseOffset}, length: ${fiber.getOccupiedSize().toInt} ")
@@ -53,7 +66,6 @@ object ParquetDataFiberWriter extends Logging {
       logDebug(s"Vmemcache_put returns $put ," +
         s"takes ${System.currentTimeMillis() - startTime} ms ")
     }
-
     val header = ParquetDataFiberHeader(column, total)
     logDebug(s"will dump fiberId: ${fiberId}  " +
       s"column to data fiber dataType = ${column.dataType()}, " +
@@ -65,9 +77,7 @@ object ParquetDataFiberWriter extends Logging {
         val fiber = emptyDataFiber(length)
         val nativeAddress = header.writeToCache(fiber.getBaseOffset)
         dumpDataToFiber(nativeAddress, column, total)
-        if (OapRuntime.getOrCreate.fiberCacheManager.isVmemCache) {
-          putIntoVmemCache(fiber)
-        }
+        putIntoVmemCache(fiber)
         fiber
       case ParquetDataFiberHeader(true, false, dicLength) =>
         val length = fiberLength(column, total, 0, dicLength)
@@ -75,18 +85,14 @@ object ParquetDataFiberWriter extends Logging {
         val fiber = emptyDataFiber(length)
         val nativeAddress = header.writeToCache(fiber.getBaseOffset)
         dumpDataAndDicToFiber(nativeAddress, column, total, dicLength)
-        if (OapRuntime.getOrCreate.fiberCacheManager.isVmemCache) {
-          putIntoVmemCache(fiber)
-        }
+        putIntoVmemCache(fiber)
         fiber
       case ParquetDataFiberHeader(false, true, _) =>
         logDebug(s"will apply ${ParquetDataFiberHeader.defaultSize} " +
           s"bytes off heap memory for data fiber.")
         val fiber = emptyDataFiber(ParquetDataFiberHeader.defaultSize)
         header.writeToCache(fiber.getBaseOffset)
-        if (OapRuntime.getOrCreate.fiberCacheManager.isVmemCache) {
-          putIntoVmemCache(fiber)
-        }
+        putIntoVmemCache(fiber)
         fiber
       case ParquetDataFiberHeader(false, false, 0) =>
         val length = fiberLength(column, total, 1)
@@ -95,9 +101,7 @@ object ParquetDataFiberWriter extends Logging {
         val nativeAddress =
           dumpNullsToFiber(header.writeToCache(fiber.getBaseOffset), column, total)
         dumpDataToFiber(nativeAddress, column, total)
-        if (OapRuntime.getOrCreate.fiberCacheManager.isVmemCache) {
-          putIntoVmemCache(fiber)
-        }
+        putIntoVmemCache(fiber)
         fiber
       case ParquetDataFiberHeader(false, false, dicLength) =>
         val length = fiberLength(column, total, 1, dicLength)
@@ -106,9 +110,54 @@ object ParquetDataFiberWriter extends Logging {
         val nativeAddress =
           dumpNullsToFiber(header.writeToCache(fiber.getBaseOffset), column, total)
         dumpDataAndDicToFiber(nativeAddress, column, total, dicLength)
-        if (OapRuntime.getOrCreate.fiberCacheManager.isVmemCache) {
-          putIntoVmemCache(fiber)
-        }
+        putIntoVmemCache(fiber)
+        fiber
+      case ParquetDataFiberHeader(true, true, _) =>
+        throw new OapException("impossible header status (true, true, _).")
+      case other => throw new OapException(s"impossible header status $other.")
+    }
+  }
+
+  def dumpToMemkindCache(column: OnHeapColumnVector, total: Int): FiberCache = {
+    val header = ParquetDataFiberHeader(column, total)
+    logDebug(s"will dump data fiber dataType = ${column.dataType()}, " +
+      s"total = $total, header is $header")
+    header match {
+      case ParquetDataFiberHeader(true, false, 0) =>
+        val length = fiberLength(column, total, 0)
+        logDebug(s"will apply $length bytes off heap memory for data fiber.")
+        val fiber = emptyDataFiber(length)
+        val nativeAddress = header.writeToCache(fiber.getBaseOffset)
+        dumpDataToFiber(nativeAddress, column, total)
+        fiber
+      case ParquetDataFiberHeader(true, false, dicLength) =>
+        val length = fiberLength(column, total, 0, dicLength)
+        logDebug(s"will apply $length bytes off heap memory for data fiber.")
+        val fiber = emptyDataFiber(length)
+        val nativeAddress = header.writeToCache(fiber.getBaseOffset)
+        dumpDataAndDicToFiber(nativeAddress, column, total, dicLength)
+        fiber
+      case ParquetDataFiberHeader(false, true, _) =>
+        logDebug(s"will apply ${ParquetDataFiberHeader.defaultSize} " +
+          s"bytes off heap memory for data fiber.")
+        val fiber = emptyDataFiber(ParquetDataFiberHeader.defaultSize)
+        header.writeToCache(fiber.getBaseOffset)
+        fiber
+      case ParquetDataFiberHeader(false, false, 0) =>
+        val length = fiberLength(column, total, 1)
+        logDebug(s"will apply $length bytes off heap memory for data fiber.")
+        val fiber = emptyDataFiber(length)
+        val nativeAddress =
+          dumpNullsToFiber(header.writeToCache(fiber.getBaseOffset), column, total)
+        dumpDataToFiber(nativeAddress, column, total)
+        fiber
+      case ParquetDataFiberHeader(false, false, dicLength) =>
+        val length = fiberLength(column, total, 1, dicLength)
+        logDebug(s"will apply $length bytes off heap memory for data fiber.")
+        val fiber = emptyDataFiber(length)
+        val nativeAddress =
+          dumpNullsToFiber(header.writeToCache(fiber.getBaseOffset), column, total)
+        dumpDataAndDicToFiber(nativeAddress, column, total, dicLength)
         fiber
       case ParquetDataFiberHeader(true, true, _) =>
         throw new OapException("impossible header status (true, true, _).")
