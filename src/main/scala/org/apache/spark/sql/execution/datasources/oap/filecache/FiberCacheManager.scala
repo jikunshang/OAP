@@ -119,10 +119,6 @@ private[sql] class FiberCacheManager(
   def dataCacheCompressionCodec: String = _dataCacheCompressionCodec
   def dataCacheCompressionSize: Int = _dataCacheCompressionSize
 
-  def isVmemCache: Boolean = {
-    sparkEnv.conf.get("spark.oap.cache.strategy", DEFAULT_CACHE_STRATEGY).equals(VMEM_CACHE)
-  }
-
   private val cacheBackend: OapCache = {
     val cacheName = sparkEnv.conf.get("spark.oap.cache.strategy", DEFAULT_CACHE_STRATEGY)
     if (cacheName.equals(GUAVA_CACHE)) {
@@ -149,6 +145,10 @@ private[sql] class FiberCacheManager(
 
   def stop(): Unit = {
     cacheBackend.cleanUp()
+  }
+
+  def getCacheType(): OapCache = {
+    return cacheBackend
   }
 
   // NOTE: all members' init should be placed before this line.
