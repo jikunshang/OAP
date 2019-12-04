@@ -21,11 +21,12 @@ import java.io.{ByteArrayInputStream, ByteArrayOutputStream, DataInputStream}
 
 import org.apache.parquet.column.Dictionary
 import org.apache.parquet.io.api.Binary
+import scala.collection.mutable
 import org.apache.spark.SparkConf
 import org.apache.spark.internal.Logging
 import org.apache.spark.io.{CompressionCodec => SparkCompressionCodec}
 import org.apache.spark.sql.execution.datasources.OapException
-import org.apache.spark.sql.execution.datasources.oap.filecache.{VMemCache, _}
+import org.apache.spark.sql.execution.datasources.oap.filecache._
 import org.apache.spark.sql.execution.datasources.parquet.{ParquetDictionaryWrapper, VectorizedColumnReader}
 import org.apache.spark.sql.execution.vectorized.OnHeapColumnVector
 import org.apache.spark.sql.oap.OapRuntime
