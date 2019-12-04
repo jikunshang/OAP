@@ -72,6 +72,20 @@ Parquet is the most popular and recommended data format in Spark open-source com
 Orc is another popular data format. We also designed the compatible layer to allow user to create index directly on top of Orc data. With the Orc reader we implemented, query over indexed Orc data is also accelerated.
 * Compatible with multiple versions of spark
 
+## Numa Support
+* Numa binding when launch the yarn container
+Considering the performance bring by numa binding, a patch in spark yarn side is suggested for apply. Currently we target to spark 2.3.2.
+Patch to upstream spark source code is supported. You can find the built spark under spark_source which is located at same directory with OAP
+```
+cd scripts
+./apply_patch.sh -v v2.3.2
+```
+Patch to the local customized spark. Notice that some conflicts need resolve manually for this usage.
+```
+cd scripts
+apply_patch.sh -v v2.3.2 -c YOUR_SPARK_DIR
+```
+
 ## Configurations and Performance Tuning
 
 Parquet Support - Enable OAP support for parquet files
