@@ -21,13 +21,11 @@ import java.io.{ByteArrayInputStream, ByteArrayOutputStream, DataInputStream}
 
 import org.apache.parquet.column.Dictionary
 import org.apache.parquet.io.api.Binary
-import scala.collection.mutable
-
 import org.apache.spark.SparkConf
 import org.apache.spark.internal.Logging
 import org.apache.spark.io.{CompressionCodec => SparkCompressionCodec}
 import org.apache.spark.sql.execution.datasources.OapException
-import org.apache.spark.sql.execution.datasources.oap.filecache._
+import org.apache.spark.sql.execution.datasources.oap.filecache.{VMemCache, _}
 import org.apache.spark.sql.execution.datasources.parquet.{ParquetDictionaryWrapper, VectorizedColumnReader}
 import org.apache.spark.sql.execution.vectorized.OnHeapColumnVector
 import org.apache.spark.sql.oap.OapRuntime
@@ -59,26 +57,21 @@ object ParquetDataFiberCompressedWriter extends Logging {
     // TODO: Next can split the read to column vector from total to batch?
     val dicLength = column.dictionaryLength()
     val cacheType = OapRuntime.getOrCreate.fiberCacheManager.getCacheType()
-    cacheType match {
-      case _: VMemCache =>
-        if (dicLength != 0) {
-          val fiber = dumpDataAndDicToFiber(column, total, dataType)
-          putIntoVmemCache(fiber, fiberId)
-          fiber
-        } else {
-          val fiber = dumpDataToFiber(column, total, dataType)
-          putIntoVmemCache(fiber, fiberId)
-          fiber
-        }
-      case _: NonEvictPMCache | _: GuavaOapCache =>
-        if (dicLength != 0) {
-          dumpDataAndDicToFiber(column, total, dataType)
-        } else {
-          dumpDataToFiber(column, total, dataType)
-        }
-
+    val isVmemCache = cacheType match {
+      case _: VMemCache => true
+      case _: NonEvictPMCache | _: GuavaOapCache => false
       case other => throw new OapException(s"unsupported cache type for parquet.")
     }
+    var fiber = None
+    if (dicLength != 0) {
+      fiber = dumpDataAndDicToFiber(column, total, dataType)
+    } else {
+      fiber = dumpDataToFiber(column, total, dataType)
+    }
+    if (isVmemCache) {
+      putIntoVmemCache(fiber, fiberId)
+    }
+    fiber
   }
 
   private def putIntoVmemCache(fiber: FiberCache, fiberId: FiberId = null) = {
