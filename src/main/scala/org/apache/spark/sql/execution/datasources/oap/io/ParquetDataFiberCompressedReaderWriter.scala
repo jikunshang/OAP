@@ -50,6 +50,11 @@ object ParquetDataFiberCompressedWriter extends Logging {
     OapRuntime.getOrCreate.fiberCacheManager.dataCacheCompressionSize
   val codecName = OapRuntime.getOrCreate.fiberCacheManager.dataCacheCompressionCodec
   val compressionCodec = SparkCompressionCodec.createCodec(new SparkConf(), codecName)
+  val isVmemCache = OapRuntime.getOrCreate.fiberCacheManager.getCacheType() match {
+    case _: VMemCache => true
+    case _: NonEvictPMCache | _: GuavaOapCache => false
+    case other => throw new OapException(s"unsupported cache type for parquet.")
+  }
 
   def dumpToCache(column: OnHeapColumnVector,
       total: Int, dataType: DataType,fiberId: FiberId = null): FiberCache = {
@@ -74,6 +79,31 @@ object ParquetDataFiberCompressedWriter extends Logging {
     }
     fiber
   }
+
+  def dumpToVmemCache(column: OnHeapColumnVector,
+                      total: Int, dataType: DataType, fiberId: FiberId = null): FiberCache = {
+    val fiber = dumpToFiber(column, total, dataType, fiberId)
+    putIntoVmemCache(fiber, fiberId)
+    fiber
+  }
+
+  def dumpToMemkindCache(column: OnHeapColumnVector,
+                         total: Int, dataType: DataType): FiberCache = {
+    dumpToFiber(column, total, dataType, null)
+  }
+
+  def dumpToFiber(column: OnHeapColumnVector,
+                  total: Int, dataType: DataType,fiberId: FiberId = null): FiberCache = {
+    val dicLength = column.dictionaryLength()
+    var fiber = None
+    if (dicLength != 0) {
+      fiber = dumpDataAndDicToFiber(column, total, dataType)
+    } else {
+      fiber = dumpDataToFiber(column, total, dataType)
+    }
+    fiber
+  }
+
 
   private def putIntoVmemCache(fiber: FiberCache, fiberId: FiberId = null) = {
     logDebug(s"vmemcacheput params: fiberkey size: ${fiberId.toFiberKey().length}," +
