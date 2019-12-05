@@ -22,7 +22,6 @@ import java.io.{ByteArrayInputStream, ByteArrayOutputStream, DataInputStream}
 import org.apache.parquet.column.Dictionary
 import org.apache.parquet.io.api.Binary
 import scala.collection.mutable
-
 import org.apache.spark.SparkConf
 import org.apache.spark.internal.Logging
 import org.apache.spark.io.{CompressionCodec => SparkCompressionCodec}
@@ -32,7 +31,7 @@ import org.apache.spark.sql.execution.datasources.parquet.{ParquetDictionaryWrap
 import org.apache.spark.sql.execution.vectorized.OnHeapColumnVector
 import org.apache.spark.sql.oap.OapRuntime
 import org.apache.spark.sql.types._
-import org.apache.spark.unsafe.Platform
+import org.apache.spark.unsafe.{Platform, VMEMCacheJNI}
 
 /**
  * ParquetDataFiberCompressedWriter is a util use to write compressed OnHeapColumnVector data
@@ -51,20 +50,70 @@ object ParquetDataFiberCompressedWriter extends Logging {
     OapRuntime.getOrCreate.fiberCacheManager.dataCacheCompressionSize
   val codecName = OapRuntime.getOrCreate.fiberCacheManager.dataCacheCompressionCodec
   val compressionCodec = SparkCompressionCodec.createCodec(new SparkConf(), codecName)
+  val isVmemCache = OapRuntime.getOrCreate.fiberCacheManager.getCacheType() match {
+    case _: VMemCache => true
+    case _: NonEvictPMCache | _: GuavaOapCache => false
+    case other => throw new OapException(s"unsupported cache type for parquet.")
+  }
 
-  def dumpToCache(reader: VectorizedColumnReader,
-      total: Int, dataType: DataType): FiberCache = {
+  def dumpToCache(column: OnHeapColumnVector,
+      total: Int, dataType: DataType,fiberId: FiberId = null): FiberCache = {
     // For the dictionary case, the column vector occurs some batch has dictionary
     // and some no dictionary. Therefore we still read the total value to cv instead of batch.
     // TODO: Next can split the read to column vector from total to batch?
-    val column: OnHeapColumnVector = new OnHeapColumnVector(total, dataType)
-    reader.readBatch(total, column)
     val dicLength = column.dictionaryLength()
-    if (dicLength != 0) {
-      dumpDataAndDicToFiber(column, total, dataType)
-    } else {
-      dumpDataToFiber(column, total, dataType)
+    val cacheType = OapRuntime.getOrCreate.fiberCacheManager.getCacheType()
+    val isVmemCache = cacheType match {
+      case _: VMemCache => true
+      case _: NonEvictPMCache | _: GuavaOapCache => false
+      case other => throw new OapException(s"unsupported cache type for parquet.")
     }
+    var fiber = None
+    if (dicLength != 0) {
+      fiber = dumpDataAndDicToFiber(column, total, dataType)
+    } else {
+      fiber = dumpDataToFiber(column, total, dataType)
+    }
+    if (isVmemCache) {
+      putIntoVmemCache(fiber, fiberId)
+    }
+    fiber
+  }
+
+  def dumpToVmemCache(column: OnHeapColumnVector,
+                      total: Int, dataType: DataType, fiberId: FiberId = null): FiberCache = {
+    val fiber = dumpToFiber(column, total, dataType, fiberId)
+    putIntoVmemCache(fiber, fiberId)
+    fiber
+  }
+
+  def dumpToMemkindCache(column: OnHeapColumnVector,
+                         total: Int, dataType: DataType): FiberCache = {
+    dumpToFiber(column, total, dataType, null)
+  }
+
+  def dumpToFiber(column: OnHeapColumnVector,
+                  total: Int, dataType: DataType,fiberId: FiberId = null): FiberCache = {
+    val dicLength = column.dictionaryLength()
+    var fiber = None
+    if (dicLength != 0) {
+      fiber = dumpDataAndDicToFiber(column, total, dataType)
+    } else {
+      fiber = dumpDataToFiber(column, total, dataType)
+    }
+    fiber
+  }
+
+
+  private def putIntoVmemCache(fiber: FiberCache, fiberId: FiberId = null) = {
+    logDebug(s"vmemcacheput params: fiberkey size: ${fiberId.toFiberKey().length}," +
+      s"addr: ${fiber.getBaseOffset}, length: ${fiber.getOccupiedSize().toInt} ")
+    val startTime = System.currentTimeMillis()
+    val put = VMEMCacheJNI.putNative(fiberId.toFiberKey().getBytes(), null, 0,
+      fiberId.toFiberKey().length, fiber.getBaseOffset,
+      0, fiber.getOccupiedSize().toInt)
+    logDebug(s"Vmemcache_put returns $put ," +
+      s"takes ${System.currentTimeMillis() - startTime} ms ")
   }
 
   /**
