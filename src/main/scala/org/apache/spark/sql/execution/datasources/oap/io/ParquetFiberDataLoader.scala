@@ -68,12 +68,13 @@ private[oap] case class ParquetFiberDataLoader(
     val columnReader =
       new VectorizedColumnReader(columnDescriptor, originalType,
         fiberData.getPageReader(columnDescriptor), TimeZone.getDefault)
-    val column = new OnHeapColumnVector(rowCount, dataType)
-    columnReader.readBatch(rowCount, column)
+
     if (OapRuntime.getOrCreate.fiberCacheManager.dataCacheCompressEnable) {
       ParquetDataFiberCompressedWriter.dumpToCache(
-        column.asInstanceOf[OnHeapColumnVector], rowCount, dataType, fiberId)
+        columnReader, rowCount, dataType)
     } else {
+      val column = new OnHeapColumnVector(rowCount, dataType)
+      columnReader.readBatch(rowCount, column)
       ParquetDataFiberWriter.dumpToCache(
         column.asInstanceOf[OnHeapColumnVector], rowCount, fiberId)
     }
