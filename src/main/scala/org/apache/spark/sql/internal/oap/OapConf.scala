@@ -378,6 +378,13 @@ object OapConf {
       .stringConf
       .createWithDefault("")
 
+  val OAP_CACHE_GUARDIAN_FREE_THREAD_NUM =
+    SqlConfAdapter.buildConf("spark.sql.oap.cache.guardian.free.thread.nums")
+      .internal()
+      .doc("Use multithread to free CacheGuardian memory ")
+      .intConf
+      .createWithDefault(2)
+
   val OAP_INDEX_STATISTIC_EXTERNALSORTER_ENABLE =
     SqlConfAdapter.buildConf("spark.sql.oap.index.statistic.externalsorter.enable")
       .internal()
