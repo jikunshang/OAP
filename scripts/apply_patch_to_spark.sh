@@ -5,9 +5,9 @@ SPARK_VERSION_SUPPORTED=(
   "v2.3.2"
 )
 
-OAP_HOME=$(dirname `pwd`)
+CUR_DIR=$(cd "$(dirname "$BASH_SOURCE")"; pwd)
+OAP_HOME=$(dirname $CUR_DIR)
 DOWNLOADED_SPARK_DIR=$(dirname $OAP_HOME)
-echo $DOWNLOADED_SPARK_DIR
 PATCH_DIR=$OAP_HOME/patches
 
 function echo_usage() {
@@ -42,14 +42,6 @@ check_git_exist() {
   fi
 }
 
-MVN=$(command -v mvn)
-check_mvn_exist() {
-  if ! [ -x "$MVN" ]; then
-    echo "ERROR: mvn is not found!"
-    exit 1
-  fi
-}
-
 TARBALL_SUFFIX=".tar.gz"
 fetch_from_upstream() {
   check_curl_exist
@@ -75,7 +67,7 @@ fetch_from_upstream() {
   rm $TARBALL_NAME
 }
 
-patch() {
+patch_to_spark() {
   # TODO: we'd better use /usr/bin/patch to apply patch. Here seems the current patch file is not applicable
   check_git_exist
   cd $SPARK_SOURCE_DIR
@@ -86,21 +78,20 @@ patch() {
 
   $GIT apply $PATCH_DIR/$UPSTREAM_SPARK_VERSION/*.patch
   if [ $? != 0 ]; then
-    echo "Fail to apply the patch. Please try to solve conflicts if you are using custom spark"
+    echo "Fail to apply the patch to spark. Please try to solve conflicts if you are using custom spark."
     exit 1
   fi
-  echo "Apply patches successfully"
+  echo "Apply patches to spark successfully."
 }
 
-build() {
-  check_mvn_exist
-  cd $SPARK_SOURCE_DIR
-  ./dev/make-distribution.sh --name spark --tgz -Phadoop-2.7 -Phive -Phive-thriftserver -Pyarn
-  if [ $? != 0 ]; then
-    echo "The spark tarball(.tgz) generated under "$SPARK_SOURCE_DIR
-    echo "you can use the built spark here or replace the jar file under your own spark"
-    exit 1
-  fi
+copy_to_oap() {
+  mkdir -p $OAP_HOME/patched_file
+  PATHED_FILE_DIR=$OAP_HOME/patched_file
+  PATCHED_FILES=`grep -r "git" $PATCH_DIR/$UPSTREAM_SPARK_VERSION/* | awk '{print substr($3,2)}'`
+  for FILE in $PATCHED_FILES
+  do
+    cp $SPARK_SOURCE_DIR$FILE $PATHED_FILE_DIR
+  done
 }
 
 ###################################################################################
@@ -130,9 +121,8 @@ if [ -z "$UPSTREAM_SPARK_VERSION" ]; then
 fi
 
 if [[ "${SPARK_VERSION_SUPPORTED[*]}" =~ $UPSTREAM_SPARK_VERSION ]]; then
-  #echo "fetch_from_upstream"
   fetch_from_upstream
 fi
 
-patch
-build
+patch_to_spark
+copy_to_oap

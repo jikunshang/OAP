@@ -78,12 +78,14 @@ Considering the performance bring by numa binding, a patch in spark yarn side is
 Patch to upstream spark source code is supported. You can find the built spark under spark_source which is located at same directory with OAP
 ```
 cd scripts
-./apply_patch.sh -v v2.3.2
+./apply_patch_to_spark.sh -v SPARK_VERSION
+mvn clean package -Ppersistent-memory,numa-binding -DskipTests
 ```
-Patch to the local customized spark. Notice that some conflicts need resolve manually for this usage.
+Patch to the local customized spark. Notice that some conflicts need resolve and copy the patched file to patched_file directory manually for this usage.
 ```
 cd scripts
-apply_patch.sh -v v2.3.2 -c YOUR_SPARK_DIR
+./apply_patch_to_spark.sh -v SPARK_VERSION -c YOUR_SPARK_DIR
+mvn clean package -Ppersistent-memory,numa-binding -DskipTests
 ```
 
 ## Configurations and Performance Tuning
