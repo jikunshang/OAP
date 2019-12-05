@@ -17,6 +17,7 @@
 
 package org.apache.spark.sql.execution.datasources.oap.filecache
 
+import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
 
@@ -24,8 +25,11 @@ import scala.collection.JavaConverters._
 
 import com.google.common.cache._
 
+import org.apache.spark.{SparkEnv, SparkException}
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.execution.datasources.OapException
+import org.apache.spark.sql.execution.datasources.oap.utils.PersistentMemoryConfigUtils
+import org.apache.spark.sql.internal.oap.OapConf
 import org.apache.spark.sql.oap.OapRuntime
 import org.apache.spark.unsafe.VMEMCacheJNI
 import org.apache.spark.util.Utils
@@ -162,10 +166,6 @@ class NonEvictPMCache(dramSize: Long,
   override def pendingFiberCount: Int = cacheGuardian.pendingFiberCount
 }
 
-// class CustomizedLRUCache extends OapCache with Logging {
-// TODO
-// }
-
 class SimpleOapCache extends OapCache with Logging {
 
   // We don't bother the memory use of Simple Cache
@@ -214,6 +214,49 @@ class VMemCache extends OapCache with Logging {
   // We don't bother the memory use of Simple Cache
   private val cacheGuardian = new CacheGuardian(Int.MaxValue)
   cacheGuardian.start()
+
+  @volatile private var initialized = false
+  private val lock = new Object
+  private val conf = SparkEnv.get.conf
+  private val initialSizeStr = conf.get(OapConf.OAP_FIBERCACHE_PERSISTENT_MEMORY_INITIAL_SIZE).trim
+  private val vmInitialSize = Utils.byteStringAsBytes(initialSizeStr)
+  require(vmInitialSize > 0, "AEP initial size must be greater than zero")
+  def initializeVMEMCache(): Unit = {
+    if (!initialized) {
+      lock.synchronized {
+        if (!initialized) {
+          val sparkEnv = SparkEnv.get
+          val conf = sparkEnv.conf
+          // The NUMA id should be set when the executor process start up. However, Spark don't
+          // support NUMA binding currently.
+          var numaId = conf.getInt("spark.executor.numa.id", -1)
+          val executorId = sparkEnv.executorId.toInt
+          val map = PersistentMemoryConfigUtils.parseConfig(conf)
+          if (numaId == -1) {
+            logWarning(s"Executor ${executorId} is not bind with NUMA. It would be better" +
+              s" to bind executor with NUMA when cache data to Intel Optane DC persistent memory.")
+            // Just round the executorId to the total NUMA number.
+            // TODO: improve here
+            numaId = executorId % PersistentMemoryConfigUtils.totalNumaNode(conf)
+          }
+          val initialPath = map.get(numaId).get
+          val fullPath = Utils.createTempDir(initialPath + File.separator + executorId)
+
+          require(fullPath.isDirectory(), "VMEMCache initialize path must be a directory")
+          val success = VMEMCacheJNI.initialize(fullPath.getCanonicalPath, vmInitialSize);
+          if (success != 0) {
+            throw new SparkException("Failed to call VMEMCacheJNI.initialize")
+          }
+          logInfo(s"Executors ${executorId}: VMEMCache initialize path:" +
+            s" ${fullPath.getCanonicalPath}, size: ${1.0 * vmInitialSize / 1024 / 1024 / 1024}GB")
+          initialized = true
+        }
+      }
+    }
+  }
+
+  initializeVMEMCache()
+
   var fiberSet = scala.collection.mutable.Set[FiberId]()
   override def get(fiber: FiberId): FiberCache = {
     val fiberKey = fiber.toFiberKey()

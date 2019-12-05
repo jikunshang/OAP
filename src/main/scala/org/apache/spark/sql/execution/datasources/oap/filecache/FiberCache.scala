@@ -24,8 +24,10 @@ import com.google.common.primitives.Ints
 import org.apache.hadoop.fs.FSDataInputStream
 import scala.collection.mutable
 
+import org.apache.spark.SparkEnv
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.execution.datasources.OapException
+import org.apache.spark.sql.internal.oap.OapConf
 import org.apache.spark.sql.oap.OapRuntime
 import org.apache.spark.unsafe.Platform
 import org.apache.spark.unsafe.types.UTF8String
@@ -36,7 +38,7 @@ case class FiberCache(fiberData: MemoryBlockHolder) extends Logging {
   // TODO: make it immutable
   var fiberId: FiberId = _
 
-  val DISPOSE_TIMEOUT = 100
+  val DISPOSE_TIMEOUT = SparkEnv.get.conf.get(OapConf.OAP_FIBER_CACHE_DISPOSE_TIMEOUT)
 
   // record every batch startAddress, endAddress and the boolean of whether compressed
   // and the child column vector length in CompressedBatchFiberInfo
@@ -74,10 +76,9 @@ case class FiberCache(fiberData: MemoryBlockHolder) extends Logging {
             // reader, so it needs to sleep some time to see if the reader done.
             // Otherwise, it becomes a polling loop.
             // TODO: use lock/sync-obj to leverage the concurrency APIs instead of explicit sleep.
-            Thread.sleep(100)
+            Thread.sleep(5)
           } else {
-            logDebug(s"refCount = 0 now")
-            if (writeLock.tryLock(200, TimeUnit.MILLISECONDS)) {
+            if (writeLock.tryLock(20, TimeUnit.MILLISECONDS)) {
               try {
                 if (refCount == 0) {
                   realDispose()
@@ -90,7 +91,7 @@ case class FiberCache(fiberData: MemoryBlockHolder) extends Logging {
           }
         }
     }
-    logWarning(s"Fiber Cache Dispose waiting detected for $fiberId")
+    logDebug(s"Fiber Cache Dispose waiting detected for $fiberId")
     false
   }
 

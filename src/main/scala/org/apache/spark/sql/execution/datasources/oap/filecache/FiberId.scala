@@ -30,9 +30,9 @@ private[oap] case class DataFiberId(file: DataFile, columnIndex: Int, rowGroupId
 
   override def hashCode(): Int = (file.path + columnIndex + rowGroupId).hashCode
 
-  override def toFiberKey(): String = {
-    s"${file.path}_${rowGroupId}_${columnIndex})"
-  }
+  val fiberKey = s"${file.path}_${rowGroupId}_${columnIndex})"
+
+  override def toFiberKey(): String = fiberKey
 
   override def equals(obj: Any): Boolean = obj match {
     case another: DataFiberId =>
