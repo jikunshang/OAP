@@ -282,19 +282,18 @@ private[filecache] class OffHeapVmemCacheMemoryManager(sparkEnv: SparkEnv)
           // The NUMA id should be set when the executor process start up. However, Spark don't
           // support NUMA binding currently.
           var numaId = conf.getInt("spark.executor.numa.id", -1)
-          val numaNodesSize = conf.get(OapConf.SIZE_OF_NUMA_NODES)
           val executorId = sparkEnv.executorId.toInt
+          val map = PersistentMemoryConfigUtils.parseConfig(conf)
           if (numaId == -1) {
-            logWarning(s"Executor ${executorId} is not bind with NUMA. It" +
-              s" would be better to bind executor with NUMA when cache data to " +
-              s"Intel Optane DC persistent memory.")
+            logWarning(s"Executor ${executorId} is not bind with NUMA. It would be better" +
+              s" to bind executor with NUMA when cache data to Intel Optane DC persistent memory.")
             // Just round the executorId to the total NUMA number.
             // TODO: improve here
-            numaId = executorId % numaNodesSize
+            numaId = executorId % PersistentMemoryConfigUtils.totalNumaNode(conf)
           }
-
-          val initialPath = conf.get(OapConf.OAP_AEP_INITIAL_PATHS).split(",")(numaId)
+          val initialPath = map.get(numaId).get
           val fullPath = Utils.createTempDir(initialPath + File.separator + executorId)
+
           require(fullPath.isDirectory(), "VMEMCache initialize path must be a directory")
           val success = VMEMCacheJNI.initialize(fullPath.getCanonicalPath, vmInitialSize);
           if (success != 0) {
