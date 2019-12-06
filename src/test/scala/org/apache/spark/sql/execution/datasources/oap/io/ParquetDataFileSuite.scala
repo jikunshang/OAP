@@ -500,8 +500,10 @@ class ParquetCacheDataWithDictionaryWithNullsCompressedSuite extends ParquetData
     val columnReader =
       new VectorizedColumnReader(columnDescriptor, types.get(0).getOriginalType,
         fiberData.getPageReader(columnDescriptor), TimeZone.getDefault)
+    val column = new OnHeapColumnVector(rowCount, IntegerType)
+    columnReader.readBatch(rowCount, column)
     val fiberCache = ParquetDataFiberCompressedWriter.
-      dumpToCache(columnReader, rowCount, IntegerType)
+      dumpToCache(column, rowCount, IntegerType)
     // init reader
     val address = fiberCache.getBaseOffset
     val dataFiberReader = ParquetDataFiberCompressedReader(
@@ -531,8 +533,10 @@ class ParquetCacheDataWithDictionaryWithNullsCompressedSuite extends ParquetData
     val columnReader =
       new VectorizedColumnReader(columnDescriptor, types.get(1).getOriginalType,
         fiberData.getPageReader(columnDescriptor), TimeZone.getDefault)
+    val column = new OnHeapColumnVector(rowCount, LongType)
+    columnReader.readBatch(rowCount, column)
     val fiberCache = ParquetDataFiberCompressedWriter.
-      dumpToCache(columnReader, rowCount, LongType)
+      dumpToCache(column, rowCount, LongType)
     // init reader
     val address = fiberCache.getBaseOffset
     val dataFiberReader = ParquetDataFiberCompressedReader(
@@ -563,8 +567,10 @@ class ParquetCacheDataWithDictionaryWithNullsCompressedSuite extends ParquetData
     val columnReader =
       new VectorizedColumnReader(columnDescriptor, types.get(2).getOriginalType,
         fiberData.getPageReader(columnDescriptor), TimeZone.getDefault)
+    val column = new OnHeapColumnVector(rowCount, BooleanType)
+    columnReader.readBatch(rowCount, column)
     val fiberCache = ParquetDataFiberCompressedWriter.
-      dumpToCache(columnReader, rowCount, BooleanType)
+      dumpToCache(column, rowCount, BooleanType)
     // init reader
     val address = fiberCache.getBaseOffset
     val dataFiberReader = ParquetDataFiberCompressedReader(
@@ -596,8 +602,10 @@ class ParquetCacheDataWithDictionaryWithNullsCompressedSuite extends ParquetData
     val columnReader =
       new VectorizedColumnReader(columnDescriptor, types.get(3).getOriginalType,
         fiberData.getPageReader(columnDescriptor), TimeZone.getDefault)
+    val column = new OnHeapColumnVector(rowCount, FloatType)
+    columnReader.readBatch(rowCount, column)
     val fiberCache = ParquetDataFiberCompressedWriter.
-      dumpToCache(columnReader, rowCount, FloatType)
+      dumpToCache(column, rowCount, FloatType)
     // init reader
     val address = fiberCache.getBaseOffset
     val dataFiberReader = ParquetDataFiberCompressedReader(
@@ -629,8 +637,10 @@ class ParquetCacheDataWithDictionaryWithNullsCompressedSuite extends ParquetData
     val columnReader =
       new VectorizedColumnReader(columnDescriptor, types.get(4).getOriginalType,
         fiberData.getPageReader(columnDescriptor), TimeZone.getDefault)
+    val column = new OnHeapColumnVector(rowCount, DoubleType)
+    columnReader.readBatch(rowCount, column)
     val fiberCache = ParquetDataFiberCompressedWriter.
-      dumpToCache(columnReader, rowCount, DoubleType)
+      dumpToCache(column, rowCount, DoubleType)
     // init reader
     val address = fiberCache.getBaseOffset
     val dataFiberReader = ParquetDataFiberCompressedReader(
@@ -662,8 +672,10 @@ class ParquetCacheDataWithDictionaryWithNullsCompressedSuite extends ParquetData
     val columnReader =
       new VectorizedColumnReader(columnDescriptor, types.get(5).getOriginalType,
         fiberData.getPageReader(columnDescriptor), TimeZone.getDefault)
+    val column = new OnHeapColumnVector(rowCount, BinaryType)
+    columnReader.readBatch(rowCount, column)
     val fiberCache = ParquetDataFiberCompressedWriter.
-      dumpToCache(columnReader, rowCount, BinaryType)
+      dumpToCache(column, rowCount, BinaryType)
     // init reader
     val address = fiberCache.getBaseOffset
     val dataFiberReader = ParquetDataFiberCompressedReader(
@@ -732,8 +744,10 @@ class ParquetCacheDataWithDictionaryWithoutNullsCompressedSuite extends ParquetD
     val columnReader =
       new VectorizedColumnReader(columnDescriptor, types.get(0).getOriginalType,
         fiberData.getPageReader(columnDescriptor), TimeZone.getDefault)
+    val column = new OnHeapColumnVector(rowCount, IntegerType)
+    columnReader.readBatch(rowCount, column)
     val fiberCache = ParquetDataFiberCompressedWriter.
-      dumpToCache(columnReader, rowCount, IntegerType)
+      dumpToCache(column, rowCount, IntegerType)
     // init reader
     val address = fiberCache.getBaseOffset
     val dataFiberReader = ParquetDataFiberCompressedReader(
@@ -761,8 +775,10 @@ class ParquetCacheDataWithDictionaryWithoutNullsCompressedSuite extends ParquetD
     val columnReader =
       new VectorizedColumnReader(columnDescriptor, types.get(1).getOriginalType,
         fiberData.getPageReader(columnDescriptor), TimeZone.getDefault)
+    val column = new OnHeapColumnVector(rowCount, LongType)
+    columnReader.readBatch(rowCount, column)
     val fiberCache = ParquetDataFiberCompressedWriter.
-      dumpToCache(columnReader, rowCount, LongType)
+      dumpToCache(column, rowCount, LongType)
     // init reader
     val address = fiberCache.getBaseOffset
     val dataFiberReader = ParquetDataFiberCompressedReader(
@@ -791,8 +807,10 @@ class ParquetCacheDataWithDictionaryWithoutNullsCompressedSuite extends ParquetD
     val columnReader =
       new VectorizedColumnReader(columnDescriptor, types.get(2).getOriginalType,
         fiberData.getPageReader(columnDescriptor), TimeZone.getDefault)
+    val column = new OnHeapColumnVector(rowCount, BooleanType)
+    columnReader.readBatch(rowCount, column)
     val fiberCache = ParquetDataFiberCompressedWriter.
-      dumpToCache(columnReader, rowCount, BooleanType)
+      dumpToCache(column, rowCount, BooleanType)
     // init reader
     val address = fiberCache.getBaseOffset
     val dataFiberReader = ParquetDataFiberCompressedReader(
@@ -822,8 +840,10 @@ class ParquetCacheDataWithDictionaryWithoutNullsCompressedSuite extends ParquetD
     val columnReader =
       new VectorizedColumnReader(columnDescriptor, types.get(3).getOriginalType,
         fiberData.getPageReader(columnDescriptor), TimeZone.getDefault)
+    val column = new OnHeapColumnVector(rowCount, FloatType)
+    columnReader.readBatch(rowCount, column)
     val fiberCache = ParquetDataFiberCompressedWriter.
-      dumpToCache(columnReader, rowCount, FloatType)
+      dumpToCache(column, rowCount, FloatType)
     // init reader
     val address = fiberCache.getBaseOffset
     val dataFiberReader = ParquetDataFiberCompressedReader(
@@ -853,8 +873,10 @@ class ParquetCacheDataWithDictionaryWithoutNullsCompressedSuite extends ParquetD
     val columnReader =
       new VectorizedColumnReader(columnDescriptor, types.get(4).getOriginalType,
         fiberData.getPageReader(columnDescriptor), TimeZone.getDefault)
+    val column = new OnHeapColumnVector(rowCount, DoubleType)
+    columnReader.readBatch(rowCount, column)
     val fiberCache = ParquetDataFiberCompressedWriter.
-      dumpToCache(columnReader, rowCount, DoubleType)
+      dumpToCache(column, rowCount, DoubleType)
     // init reader
     val address = fiberCache.getBaseOffset
     val dataFiberReader = ParquetDataFiberCompressedReader(
@@ -884,8 +906,10 @@ class ParquetCacheDataWithDictionaryWithoutNullsCompressedSuite extends ParquetD
     val columnReader =
       new VectorizedColumnReader(columnDescriptor, types.get(5).getOriginalType,
         fiberData.getPageReader(columnDescriptor), TimeZone.getDefault)
+    val column = new OnHeapColumnVector(rowCount, BinaryType)
+    columnReader.readBatch(rowCount, column)
     val fiberCache = ParquetDataFiberCompressedWriter.
-      dumpToCache(columnReader, rowCount, BinaryType)
+      dumpToCache(column, rowCount, BinaryType)
     // init reader
     val address = fiberCache.getBaseOffset
     val dataFiberReader = ParquetDataFiberCompressedReader(

@@ -32,7 +32,7 @@ import org.apache.spark.sql.execution.datasources.parquet.{ParquetDictionaryWrap
 import org.apache.spark.sql.execution.vectorized.OnHeapColumnVector
 import org.apache.spark.sql.oap.OapRuntime
 import org.apache.spark.sql.types._
-import org.apache.spark.unsafe.Platform
+import org.apache.spark.unsafe.{Platform, VMEMCacheJNI}
 
 /**
  * ParquetDataFiberCompressedWriter is a util use to write compressed OnHeapColumnVector data
@@ -51,20 +51,56 @@ object ParquetDataFiberCompressedWriter extends Logging {
     OapRuntime.getOrCreate.fiberCacheManager.dataCacheCompressionSize
   val codecName = OapRuntime.getOrCreate.fiberCacheManager.dataCacheCompressionCodec
   val compressionCodec = SparkCompressionCodec.createCodec(new SparkConf(), codecName)
+  val isVmemCache = OapRuntime.getOrCreate.fiberCacheManager.getCacheType() match {
+    case _: VMemCache => true
+    case _: NonEvictPMCache | _: GuavaOapCache => false
+    case other => throw new OapException(s"unsupported cache type for parquet.")
+  }
 
-  def dumpToCache(reader: VectorizedColumnReader,
-      total: Int, dataType: DataType): FiberCache = {
+  def dumpToCache(column: OnHeapColumnVector,
+      total: Int, dataType: DataType, fiberId: FiberId = null): FiberCache = {
     // For the dictionary case, the column vector occurs some batch has dictionary
     // and some no dictionary. Therefore we still read the total value to cv instead of batch.
     // TODO: Next can split the read to column vector from total to batch?
-    val column: OnHeapColumnVector = new OnHeapColumnVector(total, dataType)
-    reader.readBatch(total, column)
+    if ( isVmemCache ) {
+      dumpToVmemCache(column, total, dataType, fiberId)
+    } else {
+      dumpToMemkindCache(column, total, dataType)
+    }
+  }
+
+  def dumpToVmemCache(column: OnHeapColumnVector,
+                      total: Int, dataType: DataType, fiberId: FiberId = null): FiberCache = {
+    val fiber = dumpToFiber(column, total, dataType, fiberId)
+    putIntoVmemCache(fiber, fiberId)
+    fiber
+  }
+
+  def dumpToMemkindCache(column: OnHeapColumnVector,
+                         total: Int, dataType: DataType): FiberCache = {
+    dumpToFiber(column, total, dataType, null)
+  }
+
+  def dumpToFiber(column: OnHeapColumnVector,
+                  total: Int, dataType: DataType, fiberId: FiberId = null): FiberCache = {
     val dicLength = column.dictionaryLength()
     if (dicLength != 0) {
       dumpDataAndDicToFiber(column, total, dataType)
     } else {
       dumpDataToFiber(column, total, dataType)
     }
+  }
+
+
+  private def putIntoVmemCache(fiber: FiberCache, fiberId: FiberId = null) = {
+    logDebug(s"vmemcacheput params: fiberkey size: ${fiberId.toFiberKey().length}," +
+      s"addr: ${fiber.getBaseOffset}, length: ${fiber.getOccupiedSize().toInt} ")
+    val startTime = System.currentTimeMillis()
+    val put = VMEMCacheJNI.putNative(fiberId.toFiberKey().getBytes(), null, 0,
+      fiberId.toFiberKey().length, fiber.getBaseOffset,
+      0, fiber.getOccupiedSize().toInt)
+    logDebug(s"Vmemcache_put returns $put ," +
+      s"takes ${System.currentTimeMillis() - startTime} ms ")
   }
 
   /**
