@@ -147,11 +147,9 @@ object OapConf {
     SqlConfAdapter.buildConf("spark.sql.oap.fiberCache.memory.manager")
       .internal()
       .doc("Sets the implement of memory manager, it currently supports offheap(DRAM OFF_HEAP), " +
-        "pm(Intel Optane DC persistent memory) and mix(A combination of offheap and pm)." +
-        "To enable mix mode, you need to set " +
-        "spark.sql.oap.index.data.cache.separation.enable to true")
+        "vmemcache and hybrid(A combination of offheap and pm).")
       .stringConf
-      .createWithDefault("offheap")
+      .createWithDefault("vmemcache")
 
   val OAP_MIX_INDEX_MEMORY_MANAGER =
     SqlConfAdapter.buildConf("spark.sql.oap.mix.index.memory.manager")
