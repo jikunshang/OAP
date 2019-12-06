@@ -27,3 +27,7 @@ null/
 src/main/native/build
 conf/persistent-memory.xml
 *.so
+patched_file/
+src/main/spark2.3.2/scala/org/apache/spark/deploy/
+src/main/spark2.3.2/scala/org/apache/spark/executor/
+src/main/spark2.3.2/scala/org/apache/spark/sql/execution/joins/

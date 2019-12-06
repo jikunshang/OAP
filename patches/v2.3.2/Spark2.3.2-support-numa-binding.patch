@@ -1,41 +1,5 @@
-diff --git a/core/src/main/scala/org/apache/spark/SparkEnv.scala b/core/src/main/scala/org/apache/spark/SparkEnv.scala
-index 72123f2232..be88fe6d4a 100644
---- a/core/src/main/scala/org/apache/spark/SparkEnv.scala
-+++ b/core/src/main/scala/org/apache/spark/SparkEnv.scala
-@@ -175,6 +175,7 @@ object SparkEnv extends Logging {
-     create(
-       conf,
-       SparkContext.DRIVER_IDENTIFIER,
-+      None,
-       bindAddress,
-       advertiseAddress,
-       Option(port),
-@@ -193,6 +194,7 @@ object SparkEnv extends Logging {
-   private[spark] def createExecutorEnv(
-       conf: SparkConf,
-       executorId: String,
-+      numaNodeId: Option[String],
-       hostname: String,
-       numCores: Int,
-       ioEncryptionKey: Option[Array[Byte]],
-@@ -200,6 +202,7 @@ object SparkEnv extends Logging {
-     val env = create(
-       conf,
-       executorId,
-+      numaNodeId,
-       hostname,
-       hostname,
-       None,
-@@ -217,6 +220,7 @@ object SparkEnv extends Logging {
-   private def create(
-       conf: SparkConf,
-       executorId: String,
-+      numaNodeId: Option[String],
-       bindAddress: String,
-       advertiseAddress: String,
-       port: Option[Int],
 diff --git a/core/src/main/scala/org/apache/spark/executor/CoarseGrainedExecutorBackend.scala b/core/src/main/scala/org/apache/spark/executor/CoarseGrainedExecutorBackend.scala
-index 9b62e4b1b7..c6eebcae1c 100644
+index 9b62e4b1b7..3f296caa92 100644
 --- a/core/src/main/scala/org/apache/spark/executor/CoarseGrainedExecutorBackend.scala
 +++ b/core/src/main/scala/org/apache/spark/executor/CoarseGrainedExecutorBackend.scala
 @@ -41,6 +41,7 @@ private[spark] class CoarseGrainedExecutorBackend(
@@ -90,7 +54,7 @@ index 9b62e4b1b7..c6eebcae1c 100644
      }
  
 -    run(driverUrl, executorId, hostname, cores, appId, workerUrl, userClassPath)
-+    run(driverUrl, executorId, numaNodeId, hostname,  cores, appId, workerUrl, userClassPath)
++    run(driverUrl, executorId, numaNodeId, hostname, cores, appId, workerUrl, userClassPath)
      System.exit(0)
    }
  
@@ -172,23 +136,10 @@ index 3f4d236571..1c34299a04 100644
        Seq(
          s"1>${ApplicationConstants.LOG_DIR_EXPANSION_VAR}/stdout",
 diff --git a/resource-managers/yarn/src/main/scala/org/apache/spark/deploy/yarn/YarnAllocator.scala b/resource-managers/yarn/src/main/scala/org/apache/spark/deploy/yarn/YarnAllocator.scala
-index b2d960bb46..f9751ae983 100644
+index b2d960bb46..19ad7b1b9d 100644
 --- a/resource-managers/yarn/src/main/scala/org/apache/spark/deploy/yarn/YarnAllocator.scala
 +++ b/resource-managers/yarn/src/main/scala/org/apache/spark/deploy/yarn/YarnAllocator.scala
-@@ -26,12 +26,10 @@ import scala.collection.JavaConverters._
- import scala.collection.mutable
- import scala.collection.mutable.{ArrayBuffer, HashMap, HashSet, Queue}
- import scala.util.control.NonFatal
--
- import org.apache.hadoop.yarn.api.records._
- import org.apache.hadoop.yarn.client.api.AMRMClient
- import org.apache.hadoop.yarn.client.api.AMRMClient.ContainerRequest
- import org.apache.hadoop.yarn.conf.YarnConfiguration
--
- import org.apache.spark.{SecurityManager, SparkConf, SparkException}
- import org.apache.spark.deploy.yarn.YarnSparkHadoopUtil._
- import org.apache.spark.deploy.yarn.config._
-@@ -160,6 +158,8 @@ private[yarn] class YarnAllocator(
+@@ -160,6 +160,8 @@ private[yarn] class YarnAllocator(
    private[yarn] val containerPlacementStrategy =
      new LocalityPreferredContainerPlacementStrategy(sparkConf, conf, resource, resolver)
  
@@ -197,7 +148,7 @@ index b2d960bb46..f9751ae983 100644
    /**
     * Use a different clock for YarnAllocator. This is mainly used for testing.
     */
-@@ -497,9 +497,13 @@ private[yarn] class YarnAllocator(
+@@ -497,9 +499,13 @@ private[yarn] class YarnAllocator(
        val executorHostname = container.getNodeId.getHost
        val containerId = container.getId
        val executorId = executorIdCounter.toString
@@ -212,7 +163,7 @@ index b2d960bb46..f9751ae983 100644
  
        def updateInternalState(): Unit = synchronized {
          runningExecutors.add(executorId)
-@@ -525,6 +529,7 @@ private[yarn] class YarnAllocator(
+@@ -525,6 +531,7 @@ private[yarn] class YarnAllocator(
                    sparkConf,
                    driverUrl,
                    executorId,
@@ -220,7 +171,7 @@ index b2d960bb46..f9751ae983 100644
                    executorHostname,
                    executorMemory,
                    executorCores,
-@@ -634,6 +639,7 @@ private[yarn] class YarnAllocator(
+@@ -634,6 +641,7 @@ private[yarn] class YarnAllocator(
          }
  
          allocatedContainerToHostMap.remove(containerId)
@@ -228,10 +179,11 @@ index b2d960bb46..f9751ae983 100644
        }
  
        containerIdToExecutorId.remove(containerId).foreach { eid =>
-@@ -728,6 +734,50 @@ private[yarn] class YarnAllocator(
+@@ -728,6 +736,51 @@ private[yarn] class YarnAllocator(
  
  }
  
++// scalastyle:off
 +// Manage how to bind numa with an exector. No matter numa binding turn on/off
 +// we should assign a numa id since Persistent Memory always be associate with a numa id
 +private[yarn] class NumaManager(sparkConf: SparkConf) extends Logging {
