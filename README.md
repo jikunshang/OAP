@@ -76,6 +76,7 @@ Orc is another popular data format. We also designed the compatible layer to all
 * Numa binding when launch the yarn container
 Considering the performance bring by numa binding, a patch in spark yarn side is suggested for apply. Currently we target to spark 2.3.2.
 Patch to upstream spark source code is supported. You can find the built spark under spark_source which is located at same directory with OAP
+If numa binding is enabled, spark.yarn.numa.num is required and should set it to the number of numa nodes in each hosts.
 ```
 cd scripts
 ./apply_patch_to_spark.sh -v SPARK_VERSION
