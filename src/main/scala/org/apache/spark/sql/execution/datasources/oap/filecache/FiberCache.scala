@@ -21,6 +21,7 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 
 import com.google.common.primitives.Ints
+import org.apache.hadoop.fs.FSDataInputStream
 import scala.collection.mutable
 
 import org.apache.spark.internal.Logging
@@ -175,6 +176,7 @@ case class CompressedBatchedFiberInfo(
     compressed: Boolean, length: Long)
 
 object FiberCache {
+  val memoryManager = OapRuntime.getOrCreate.memoryManager
   //  For test purpose :convert Array[Byte] to FiberCache
   private[oap] def apply(data: Array[Byte]): FiberCache = {
     val memoryBlockHolder =
@@ -186,5 +188,59 @@ object FiberCache {
         data.length,
         "DRAM")
     FiberCache(memoryBlockHolder)
+  }
+
+  private def allocateDataMemory(size : Long): MemoryBlockHolder = {
+    var block : MemoryBlockHolder = null.asInstanceOf[MemoryBlockHolder]
+    if ( memoryManager.isInstanceOf[MixMemoryManager] ) {
+      block = memoryManager.asInstanceOf[MixMemoryManager].allocateData( size )
+    } else {
+      block = memoryManager.allocate( size )
+    }
+    block.cacheType = CacheEnum.DATA
+    block
+  }
+
+  private def allocateIndexMemory(size : Long): MemoryBlockHolder = {
+    var block : MemoryBlockHolder = null.asInstanceOf[MemoryBlockHolder]
+    if ( memoryManager.isInstanceOf[MixMemoryManager] ) {
+      block = memoryManager.asInstanceOf[MixMemoryManager].allocateIndex( size )
+    } else {
+      block = memoryManager.allocate( size )
+    }
+    block.cacheType = CacheEnum.INDEX
+    block
+  }
+
+  def toDataFiberCache(bytes: Array[Byte]): FiberCache = {
+    val block = allocateDataMemory(bytes.length)
+    Platform.copyMemory(
+      bytes,
+      Platform.BYTE_ARRAY_OFFSET,
+      block.baseObject,
+      block.baseOffset,
+      bytes.length)
+    FiberCache(block)
+  }
+
+  def toIndexFiberCache(bytes: Array[Byte]): FiberCache = {
+    val block = allocateIndexMemory(bytes.length)
+    Platform.copyMemory(
+      bytes,
+      Platform.BYTE_ARRAY_OFFSET,
+      block.baseObject,
+      block.baseOffset,
+      bytes.length)
+    FiberCache(block)
+  }
+
+  def toIndexFiberCache(in: FSDataInputStream, position: Long, length: Int): FiberCache = {
+    val bytes = new Array[Byte](length)
+    in.readFully(position, bytes)
+    toIndexFiberCache(bytes)
+  }
+
+  def getEmptyDataFiberCache(length: Long): FiberCache = {
+    FiberCache(allocateDataMemory(length))
   }
 }

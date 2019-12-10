@@ -21,8 +21,6 @@ import java.io.File
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 
-import org.apache.hadoop.fs.FSDataInputStream
-
 import org.apache.spark.{SparkEnv, SparkException}
 import org.apache.spark.internal.Logging
 import org.apache.spark.memory.MemoryMode
@@ -87,45 +85,6 @@ private[sql] abstract class MemoryManager {
   private[filecache] def allocate(size: Long): MemoryBlockHolder
 
   private[filecache] def free(block: MemoryBlockHolder): Unit
-
-  @inline protected def toFiberCache(bytes: Array[Byte]): FiberCache = {
-    val block = allocate(bytes.length)
-    Platform.copyMemory(
-      bytes,
-      Platform.BYTE_ARRAY_OFFSET,
-      block.baseObject,
-      block.baseOffset,
-      bytes.length)
-    FiberCache(block)
-  }
-
-  /**
-   * Used by IndexFile
-   */
-  def toIndexFiberCache(in: FSDataInputStream, position: Long, length: Int): FiberCache = {
-    val bytes = new Array[Byte](length)
-    in.readFully(position, bytes)
-    toFiberCache(bytes)
-  }
-
-  /**
-   * Used by IndexFile. For decompressed data
-   */
-  def toIndexFiberCache(bytes: Array[Byte]): FiberCache = {
-    toFiberCache(bytes)
-  }
-
-  /**
-   * Used by OapDataFile since we need to parse the raw data in on-heap memory before put it into
-   * off-heap memory
-   */
-  def toDataFiberCache(bytes: Array[Byte]): FiberCache = {
-    toFiberCache(bytes)
-  }
-
-  def getEmptyDataFiberCache(length: Long): FiberCache = {
-    FiberCache(allocate(length))
-  }
 
   def stop(): Unit = {}
 }
@@ -515,20 +474,12 @@ private[filecache] class MixMemoryManager(sparkEnv: SparkEnv)
     throw new UnsupportedOperationException("Unsupported")
   }
 
-  override def toIndexFiberCache(in: FSDataInputStream, position: Long, length: Int): FiberCache = {
-    indexMemoryManager.toIndexFiberCache(in, position, length).setMemBlockCacheType(CacheEnum.INDEX)
+  def allocateIndex(size: Long): MemoryBlockHolder = {
+    indexMemoryManager.allocate(size)
   }
 
-  override def toIndexFiberCache(bytes: Array[Byte]): FiberCache = {
-    indexMemoryManager.toIndexFiberCache(bytes).setMemBlockCacheType(CacheEnum.INDEX)
-  }
-
-  override def toDataFiberCache(bytes: Array[Byte]): FiberCache = {
-    dataMemoryManager.toDataFiberCache(bytes).setMemBlockCacheType(CacheEnum.DATA)
-  }
-
-  override def getEmptyDataFiberCache(length: Long): FiberCache = {
-    dataMemoryManager.getEmptyDataFiberCache(length).setMemBlockCacheType(CacheEnum.DATA)
+  def allocateData(size: Long): MemoryBlockHolder = {
+    dataMemoryManager.allocate(size)
   }
 
   override private[filecache] def free(block: MemoryBlockHolder): Unit = {
