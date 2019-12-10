@@ -35,7 +35,7 @@ index 9b62e4b1b7..3f296caa92 100644
    def main(args: Array[String]) {
      var driverUrl: String = null
      var executorId: String = null
-+    var numaNodeId: Option[String] = null
++    var numaNodeId: Option[String] = None
      var hostname: String = null
      var cores: Int = 0
      var appId: String = null
@@ -187,14 +187,14 @@ index b2d960bb46..19ad7b1b9d 100644
 +// Manage how to bind numa with an exector. No matter numa binding turn on/off
 +// we should assign a numa id since Persistent Memory always be associate with a numa id
 +private[yarn] class NumaManager(sparkConf: SparkConf) extends Logging {
-+  private final val totalNumaNode = sparkConf.getInt("spark.yarn.numa.num", 0)
++  private final val totalNumaNode = sparkConf.get(SPARK_YARN_NUMA_NUM)
 +  private val hostToNumaIds = new ConcurrentHashMap[String, Array[Int]]()
 +  private val hostToContainers = new ConcurrentHashMap[String, mutable.HashMap[ContainerId, String]]()
 +
 +  def assignNumaId(
 +    containerId: ContainerId,
 +    executorHostName: String): Option[String] = {
-+    if(totalNumaNode == 0) None
++    if(totalNumaNode == 0) return None
 +    if(hostToContainers.containsKey(executorHostName)) {
 +      if(!hostToContainers.get(executorHostName).contains(containerId)) {
 +        this.synchronized {
