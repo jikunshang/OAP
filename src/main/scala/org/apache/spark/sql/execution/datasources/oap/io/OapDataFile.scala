@@ -36,7 +36,7 @@ import org.apache.spark.sql.internal.oap.OapConf
 import org.apache.spark.sql.oap.OapRuntime
 import org.apache.spark.sql.sources._
 import org.apache.spark.sql.types._
-import org.apache.spark.unsafe.{Platform, VMEMCacheJNI}
+import org.apache.spark.unsafe.Platform
 
 private[oap] abstract class OapDataFile extends DataFile {
   // Currently this is for a more clear class hierarchy, in the future there may be some common
@@ -137,42 +137,6 @@ private[oap] case class OapDataFileV1(
     val len = groupMeta.fiberLens(columnIndex)
     val decompressor: BytesDecompressor = codecFactory.getDecompressor(meta.codec)
 
-    // vmemcache enabled
-    if (SparkEnv.get.conf.get(OapConf.OAP_FIBERCACHE_MEMORY_MANAGER).equals("vmemcache")) {
-      val key: String = {
-        path + "_" + groupId.toString() + "_" + columnIndex.toString()
-      }
-      val data = new Array[Byte](len)
-      logWarning(s"keyvalue-----${key}     ${data.length}")
-      val get = VMEMCacheJNI.get(key.getBytes(), null,
-        0, key.length, data, null, 0, data.length)
-      if (get <= 0) {
-        val len = groupMeta.fiberLens(columnIndex)
-        val decompressor: BytesDecompressor = codecFactory.getDecompressor(meta.codec)
-        // get the fiber data start position
-        // TODO: update the meta to store the fiber start pos
-        var i = 0
-        var fiberStart = groupMeta.start
-        while (i < columnIndex) {
-          fiberStart += groupMeta.fiberLens(i)
-          i += 1
-        }
-        val bytes = new Array[Byte](len)
-        readToBytes(fiberStart, bytes)
-        // We have to read Array[Byte] from file and decode/decompress it before putToFiberCache
-        // TODO: Try to finish this in off-heap memory
-        val rawData = decompressor.decompress(bytes, uncompressedLen)
-        // val rawData = fiberParser.parse(decompressor.decompress(bytes,
-        // uncompressedLen), rowCount)
-        VMEMCacheJNI.put(key.getBytes(), null,
-          0, key.length, rawData, null, 0, rawData.length)
-        val realData = fiberParser.parse(rawData, rowCount)
-        FiberCache(realData)
-      } else {
-        val realData = fiberParser.parse(data, rowCount)
-        OapRuntime.getOrCreate.memoryManager.toDataFiberCache(data)
-      }
-    } else {
       // get the fiber data start position
       // TODO: update the meta to store the fiber start pos
       var i = 0
@@ -187,8 +151,7 @@ private[oap] case class OapDataFileV1(
       // We have to read Array[Byte] from file and decode/decompress it before putToFiberCache
       // TODO: Try to finish this in off-heap memory
       val rawData = fiberParser.parse(decompressor.decompress(bytes, uncompressedLen), rowCount)
-      OapRuntime.getOrCreate.memoryManager.toDataFiberCache(rawData)
-    }
+      FiberCache.toDataFiberCache(rawData)
 
   }
 

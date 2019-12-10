@@ -203,7 +203,8 @@ class SimpleOapCache extends OapCache with Logging {
 
 class VMemCache extends OapCache with Logging {
   private def emptyDataFiber(fiberLength: Long): FiberCache =
-    OapRuntime.getOrCreate.memoryManager.getEmptyDataFiberCache(fiberLength)
+    FiberCache.getEmptyDataFiberCache(fiberLength)
+
   private val cacheHitCount: AtomicLong = new AtomicLong(0)
   private val cacheMissCount: AtomicLong = new AtomicLong(0)
   private val cacheTotalGetTime: AtomicLong = new AtomicLong(0)
@@ -269,6 +270,14 @@ class VMemCache extends OapCache with Logging {
   override def invalidateAll(fibers: Iterable[FiberId]): Unit = {}
 
   override def cacheSize: Long = 0
+
+  override def cache(fiberId: FiberId): FiberCache = {
+    val fiber = super.cache(fiberId)
+    VMEMCacheJNI.putNative(fiberId.toFiberKey().getBytes(), null, 0,
+      fiberId.toFiberKey().length, fiber.getBaseOffset,
+      0, fiber.getOccupiedSize().toInt)
+    fiber
+  }
 
   override def cacheStats: CacheStats = {
     val status = new Array[Long](3)

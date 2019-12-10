@@ -22,7 +22,6 @@ import org.apache.hadoop.fs.{FSDataInputStream, Path}
 
 import org.apache.spark.sql.execution.datasources.oap.filecache.FiberCache
 import org.apache.spark.sql.execution.datasources.oap.index.IndexFileReader
-import org.apache.spark.sql.oap.OapRuntime
 
 private[index] case class IndexFileReaderImpl(
     configuration: Configuration,
@@ -34,7 +33,7 @@ private[index] case class IndexFileReaderImpl(
     indexPath.getFileSystem(configuration).open(indexPath)
 
   override def readFiberCache(position: Long, length: Int): FiberCache =
-    OapRuntime.getOrCreate.memoryManager.toIndexFiberCache(is, position, length)
+    FiberCache.toIndexFiberCache(is, position, length)
 
   override def read(position: Long, length: Int): Array[Byte] = {
     val bytes = new Array[Byte](length)

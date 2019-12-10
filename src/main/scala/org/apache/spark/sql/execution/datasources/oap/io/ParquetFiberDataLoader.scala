@@ -72,10 +72,10 @@ private[oap] case class ParquetFiberDataLoader(
     columnReader.readBatch(rowCount, column)
     if (OapRuntime.getOrCreate.fiberCacheManager.dataCacheCompressEnable) {
       ParquetDataFiberCompressedWriter.dumpToCache(
-        column.asInstanceOf[OnHeapColumnVector], rowCount, dataType, fiberId)
+        column.asInstanceOf[OnHeapColumnVector], rowCount, dataType)
     } else {
       ParquetDataFiberWriter.dumpToCache(
-        column.asInstanceOf[OnHeapColumnVector], rowCount, fiberId)
+        column.asInstanceOf[OnHeapColumnVector], rowCount)
     }
   }
 }
