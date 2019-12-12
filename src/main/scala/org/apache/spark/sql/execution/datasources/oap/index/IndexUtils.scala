@@ -39,7 +39,6 @@ import org.apache.spark.sql.execution.datasources.OapIndexWriteJobStatsTracker
 import org.apache.spark.sql.execution.datasources.oap.IndexMeta
 import org.apache.spark.sql.execution.datasources.oap.OapFileFormat
 import org.apache.spark.sql.execution.datasources.oap.io.{BytesCompressor, BytesDecompressor, IndexFile}
-import org.apache.spark.sql.execution.datasources.orc.ReadOnlyNativeOrcFileFormat
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFileFormat
 import org.apache.spark.sql.execution.datasources.parquet.ReadOnlyParquetFileFormat
 import org.apache.spark.sql.hive.orc.ReadOnlyOrcFileFormat
@@ -402,28 +401,7 @@ private[oap] object IndexUtils extends  Logging {
           options = _fsRelation.options)(_fsRelation.sparkSession)
         val logical = LogicalRelation(fsRelation, attributes, id, isStreaming = false)
         (f, s, OapFileFormat.PARQUET_DATA_FILE_CLASSNAME, id, logical)
-      case LogicalRelation(
-          _fsRelation @ HadoopFsRelation(f, _, s, _, format, _), attributes, id, _)
-        if format.isInstanceOf[org.apache.spark.sql.hive.orc.OrcFileFormat] ||
-          format.isInstanceOf[org.apache.spark.sql.execution.datasources.orc.OrcFileFormat] =>
-        if (!sparkSession.conf.get(OapConf.OAP_ORC_ENABLED)) {
-          throw new OapException(s"turn on ${
-            OapConf.OAP_ORC_ENABLED.key
-          } to allow index building on orc files")
-        }
-        // ReadOnlyOrcFileFormat and ReadOnlyNativeOrcFileFormat don't support splitable.
-        // ReadOnlyOrcFileFormat is for hive orc.
-        // ReadOnlyNativeOrcFileFormat is for native orc introduced in Spark 2.3.
-        val fsRelation = format match {
-          case _: org.apache.spark.sql.hive.orc.OrcFileFormat =>
-            _fsRelation.copy(fileFormat = new ReadOnlyOrcFileFormat(),
-              options = _fsRelation.options)(_fsRelation.sparkSession)
-          case _: org.apache.spark.sql.execution.datasources.orc.OrcFileFormat =>
-            _fsRelation.copy(fileFormat = new ReadOnlyNativeOrcFileFormat(),
-              options = _fsRelation.options)(_fsRelation.sparkSession)
-        }
-        val logical = LogicalRelation(fsRelation, attributes, id, isStreaming = false)
-        (f, s, OapFileFormat.ORC_DATA_FILE_CLASSNAME, id, logical)
+
       case other =>
         throw new OapException(s"We don't support index operation for ${other.simpleString}")
     }

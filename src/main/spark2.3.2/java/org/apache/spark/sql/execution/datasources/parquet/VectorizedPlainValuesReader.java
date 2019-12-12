@@ -38,6 +38,15 @@ public class VectorizedPlainValuesReader extends ValuesReader implements Vectori
   private static final boolean bigEndianPlatform =
     ByteOrder.nativeOrder().equals(ByteOrder.BIG_ENDIAN);
 
+  @Override
+  public void initFromPage(int valueCount, ByteBuffer bytes, int offset) throws IOException {
+    this.byteBuffer = bytes;
+    this.offset = offset + Platform.BYTE_ARRAY_OFFSET;
+    if (bigEndianPlatform) {
+      byteBuffer = byteBuffer.order(ByteOrder.LITTLE_ENDIAN); // FIXME?
+    }
+  }
+
   public VectorizedPlainValuesReader() {
   }
 

@@ -17,6 +17,7 @@
 
 package org.apache.spark.sql.execution.datasources.parquet
 
+import org.apache.parquet.bytes.DirectByteBufferAllocator
 import org.apache.parquet.column.values.plain._
 import org.apache.parquet.io.api.Binary
 
@@ -27,6 +28,7 @@ import org.apache.spark.sql.oap.adapter.ColumnVectorAdapter
 import org.apache.spark.sql.types.BinaryType
 
 class SkippableVectorizedPlainValuesReaderSuite extends SparkFunSuite with Logging {
+  val allocator = new DirectByteBufferAllocator()
   test("read and skip Boolean") {
     // prepare data
     val writer = new BooleanPlainValuesWriter()
@@ -56,7 +58,7 @@ class SkippableVectorizedPlainValuesReaderSuite extends SparkFunSuite with Loggi
 
   test("read and skip Integer") {
     // prepare data
-    val writer = new PlainValuesWriter(64 * 1024, 64 * 1024)
+    val writer = new PlainValuesWriter(64 * 1024, 64 * 1024, allocator)
     (0 until 10).foreach(writer.writeInteger)
 
     // init reader
@@ -77,7 +79,7 @@ class SkippableVectorizedPlainValuesReaderSuite extends SparkFunSuite with Loggi
 
   test("read and skip Long") {
     // prepare data
-    val writer = new PlainValuesWriter(64 * 1024, 64 * 1024)
+    val writer = new PlainValuesWriter(64 * 1024, 64 * 1024, allocator)
     (0 until 10).foreach(i => writer.writeLong(Int.int2long(i)))
 
     // init reader
@@ -97,7 +99,7 @@ class SkippableVectorizedPlainValuesReaderSuite extends SparkFunSuite with Loggi
 
   test("read and skip Double") {
     // prepare data
-    val writer = new PlainValuesWriter(64 * 1024, 64 * 1024)
+    val writer = new PlainValuesWriter(64 * 1024, 64 * 1024, allocator)
     (0 until 10).foreach(i => writer.writeDouble(Int.int2double(i)))
 
     // init reader
@@ -117,7 +119,7 @@ class SkippableVectorizedPlainValuesReaderSuite extends SparkFunSuite with Loggi
 
   test("read and skip Float") {
     // prepare data
-    val writer = new PlainValuesWriter(64 * 1024, 64 * 1024)
+    val writer = new PlainValuesWriter(64 * 1024, 64 * 1024, allocator)
     (0 until 10).foreach(i => writer.writeFloat(Int.int2float(i)))
 
     // init reader
@@ -137,7 +139,7 @@ class SkippableVectorizedPlainValuesReaderSuite extends SparkFunSuite with Loggi
 
   test("read and skip Bytes") {
     // prepare data
-    val writer = new PlainValuesWriter(64 * 1024, 64 * 1024)
+    val writer = new PlainValuesWriter(64 * 1024, 64 * 1024, allocator)
     // Bytes are stored as a 4-byte little endian int. Just read the first byte.
     // this comments from VectorizedPlainValuesReader.readBytes,
     // so for 1 byte we should write byte and 3 zero.
@@ -164,7 +166,7 @@ class SkippableVectorizedPlainValuesReaderSuite extends SparkFunSuite with Loggi
 
   test("read and skip Binary") {
     // prepare data
-    val writer = new PlainValuesWriter(64 * 1024, 64 * 1024)
+    val writer = new PlainValuesWriter(64 * 1024, 64 * 1024, allocator)
     writer.writeBytes(Binary.fromString("AB"))
     writer.writeBytes(Binary.fromString("CDE"))
     writer.writeBytes(Binary.fromString("F"))
@@ -187,7 +189,7 @@ class SkippableVectorizedPlainValuesReaderSuite extends SparkFunSuite with Loggi
 
   test("read and skip Binary By Len") {
     // prepare data
-    val writer = new FixedLenByteArrayPlainValuesWriter(12, 64 * 1024, 64 * 1024)
+    val writer = new FixedLenByteArrayPlainValuesWriter(12, 64 * 1024, 64 * 1024, allocator)
     writer.writeBytes(Binary.fromString("012345678901"))
     writer.writeBytes(Binary.fromString("890101234567"))
 

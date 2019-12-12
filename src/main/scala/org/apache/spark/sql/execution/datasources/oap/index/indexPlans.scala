@@ -221,8 +221,7 @@ case class DropIndexCommand(
     relation match {
       case LogicalRelation(HadoopFsRelation(fileCatalog, _, _, _, format, _), _, identifier, _)
           if format.isInstanceOf[OapFileFormat] || format.isInstanceOf[ParquetFileFormat] ||
-            format.isInstanceOf[org.apache.spark.sql.hive.orc.OrcFileFormat] ||
-            format.isInstanceOf[org.apache.spark.sql.execution.datasources.orc.OrcFileFormat] =>
+            format.isInstanceOf[org.apache.spark.sql.hive.orc.OrcFileFormat] => // todo remove
         logInfo(s"Dropping index $indexName")
         val partitions = OapUtils.getPartitions(fileCatalog, partitionSpec)
         val targetDirs = partitions.filter(_.files.nonEmpty)

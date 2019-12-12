@@ -17,16 +17,17 @@
 
 package org.apache.spark.sql.execution.datasources.parquet
 
+import org.apache.parquet.bytes.DirectByteBufferAllocator
 import org.apache.parquet.column.values.rle.RunLengthBitPackingHybridValuesWriter
 
 import org.apache.spark.SparkFunSuite
 import org.apache.spark.internal.Logging
 
 class SkippableVectorizedRleValuesReaderSuite extends SparkFunSuite with Logging {
-
+  val allocator = new DirectByteBufferAllocator()
   test("bit packing read and skip Integer") {
     // prepare data
-    val writer = new RunLengthBitPackingHybridValuesWriter(3, 5, 10)
+    val writer = new RunLengthBitPackingHybridValuesWriter(3, 5, 10, allocator)
     (0 until 100).foreach(i => writer.writeInteger(i % 3))
 
     // init reader
@@ -43,7 +44,7 @@ class SkippableVectorizedRleValuesReaderSuite extends SparkFunSuite with Logging
 
   test("rle read and skip Integer") {
     // prepare data
-    val writer = new RunLengthBitPackingHybridValuesWriter(3, 5, 10)
+    val writer = new RunLengthBitPackingHybridValuesWriter(3, 5, 10, allocator)
     (0 until 10).foreach(_ => writer.writeInteger(4))
     (0 until 10).foreach(_ => writer.writeInteger(5))
 
@@ -61,7 +62,7 @@ class SkippableVectorizedRleValuesReaderSuite extends SparkFunSuite with Logging
 
   test("rle read and skip Boolean") {
     // prepare data
-    val writer = new RunLengthBitPackingHybridValuesWriter(3, 5, 10)
+    val writer = new RunLengthBitPackingHybridValuesWriter(3, 5, 10, allocator)
     (0 until 10).foreach(_ => writer.writeBoolean(true))
     (0 until 10).foreach(_ => writer.writeBoolean(false))
 

@@ -17,6 +17,7 @@
 
 package org.apache.spark.sql.execution.datasources.parquet
 
+import org.apache.parquet.bytes.DirectByteBufferAllocator
 import org.apache.parquet.column.values.plain.{BooleanPlainValuesWriter, PlainValuesWriter}
 import org.apache.parquet.column.values.rle.RunLengthBitPackingHybridValuesWriter
 import org.apache.parquet.io.api.Binary
@@ -28,13 +29,14 @@ import org.apache.spark.sql.oap.adapter.ColumnVectorAdapter
 import org.apache.spark.sql.types.BinaryType
 
 class SkipAndReadValueWithRleDefinitionLevelsSuite extends SparkFunSuite with Logging {
+  val allocator = new DirectByteBufferAllocator()
 
   test("read and skip Integers") {
 
     // prepare data:
     // [null, null, null, null, null, null, null, null, null, null, 1, 2, 3, 4]
     // value: [1, 2, 3, 4]
-    val valueWriter = new PlainValuesWriter(64 * 1024, 64 * 1024)
+    val valueWriter = new PlainValuesWriter(64 * 1024, 64 * 1024, allocator)
     (1 until 5).foreach(valueWriter.writeInteger)
 
     // init value reader
@@ -83,7 +85,7 @@ class SkipAndReadValueWithRleDefinitionLevelsSuite extends SparkFunSuite with Lo
     // prepare data:
     // [null, null, null, null, null, null, null, null, null, null, A, B, C, D]
     // value: value: [A, B, C, D]
-    val valueWriter = new PlainValuesWriter(64 * 1024, 64 * 1024)
+    val valueWriter = new PlainValuesWriter(64 * 1024, 64 * 1024, allocator)
     "ABCD".getBytes.foreach { v =>
       valueWriter.writeByte(v)
       valueWriter.writeByte(0)
@@ -111,7 +113,7 @@ class SkipAndReadValueWithRleDefinitionLevelsSuite extends SparkFunSuite with Lo
     // prepare data:
     // [null, null, null, null, null, null, null, null, null, null, 1, 2, 3, 4]
     // value: [1, 2, 3, 4]
-    val valueWriter = new PlainValuesWriter(64 * 1024, 64 * 1024)
+    val valueWriter = new PlainValuesWriter(64 * 1024, 64 * 1024, allocator)
     (1 until 5).foreach(valueWriter.writeInteger)
     // init value reader
     val valueReader = new SkippableVectorizedPlainValuesReader()
@@ -132,7 +134,7 @@ class SkipAndReadValueWithRleDefinitionLevelsSuite extends SparkFunSuite with Lo
 
     // prepare data: [null, null, null, null, null, null, null, null, null, null, 1L, 2L, 3L, 4L]
     // value: [1L, 2L, 3L, 4L]
-    val valueWriter = new PlainValuesWriter(64 * 1024, 64 * 1024)
+    val valueWriter = new PlainValuesWriter(64 * 1024, 64 * 1024, allocator)
     (1 until 5).foreach(v => valueWriter.writeLong(v.toLong))
 
     // init value reader
@@ -155,7 +157,7 @@ class SkipAndReadValueWithRleDefinitionLevelsSuite extends SparkFunSuite with Lo
     // prepare data:
     // [null, null, null, null, null, null, null, null, null, null, 1.0F, 2.0F, 3.0F, 4.0F]
     // value: [1.0F, 2.0F, 3.0F, 4.0F]
-    val valueWriter = new PlainValuesWriter(64 * 1024, 64 * 1024)
+    val valueWriter = new PlainValuesWriter(64 * 1024, 64 * 1024, allocator)
     (1 until 5).foreach(v => valueWriter.writeFloat(v.toFloat))
 
     // init value reader
@@ -178,7 +180,7 @@ class SkipAndReadValueWithRleDefinitionLevelsSuite extends SparkFunSuite with Lo
     // prepare data:
     // [null, null, null, null, null, null, null, null, null, null, 1.0D, 2.0D, 3.0D, 4.0D]
     // value: [1.0D, 2.0D, 3.0D, 4.0D]
-    val valueWriter = new PlainValuesWriter(64 * 1024, 64 * 1024)
+    val valueWriter = new PlainValuesWriter(64 * 1024, 64 * 1024, allocator)
     (1 until 5).foreach(v => valueWriter.writeDouble(v.toDouble))
 
     // init value reader
@@ -201,7 +203,7 @@ class SkipAndReadValueWithRleDefinitionLevelsSuite extends SparkFunSuite with Lo
     // prepare data:
     // [null, null, null, null, null, null, null, null, null, null, AB, CDE, F, GHI]
     // value: [AB, CDE, F, GHI]
-    val valueWriter = new PlainValuesWriter(64 * 1024, 64 * 1024)
+    val valueWriter = new PlainValuesWriter(64 * 1024, 64 * 1024, allocator)
     valueWriter.writeBytes(Binary.fromString("AB"))
     valueWriter.writeBytes(Binary.fromString("CDE"))
     valueWriter.writeBytes(Binary.fromString("F"))
@@ -230,7 +232,7 @@ class SkipAndReadValueWithRleDefinitionLevelsSuite extends SparkFunSuite with Lo
    * @return SkippableVectorizedRleValuesReader  represent definition level values
    */
   private def defReader: SkippableVectorizedRleValuesReader = {
-    val defWriter = new RunLengthBitPackingHybridValuesWriter(3, 5, 10)
+    val defWriter = new RunLengthBitPackingHybridValuesWriter(3, 5, 10, allocator)
     Array(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1).foreach(defWriter.writeInteger)
     val defData = defWriter.getBytes.toByteArray
     val defReader = new SkippableVectorizedRleValuesReader(3)

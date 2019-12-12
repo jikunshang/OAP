@@ -19,8 +19,7 @@ package org.apache.spark.sql.execution.datasources
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions.Expression
-import org.apache.spark.sql.execution.datasources.oap.{OapFileFormat, OptimizedOrcFileFormat, OptimizedParquetFileFormat}
-import org.apache.spark.sql.execution.datasources.orc.ReadOnlyNativeOrcFileFormat
+import org.apache.spark.sql.execution.datasources.oap.{OapFileFormat, OptimizedParquetFileFormat}
 import org.apache.spark.sql.execution.datasources.parquet.{ParquetFileFormat, ReadOnlyParquetFileFormat}
 import org.apache.spark.sql.hive.orc.ReadOnlyOrcFileFormat
 import org.apache.spark.sql.internal.SQLConf
@@ -47,9 +46,9 @@ object HadoopFsRelationOptimizer extends Logging {
       case _: ReadOnlyParquetFileFormat =>
         logInfo("index operation for parquet, retain ReadOnlyParquetFileFormat.")
         (relation, false)
-      case _: ReadOnlyOrcFileFormat | _: ReadOnlyNativeOrcFileFormat =>
-        logInfo("index operation for orc, retain ReadOnlyOrcFileFormat.")
-        (relation, false)
+//      case _: ReadOnlyOrcFileFormat | _: ReadOnlyNativeOrcFileFormat =>
+//        logInfo("index operation for orc, retain ReadOnlyOrcFileFormat.")
+//        (relation, false)
       // There are two scenarios will use OptimizedParquetFileFormat:
       // 1. canUseCache: OAP_PARQUET_ENABLED is true and OAP_PARQUET_DATA_CACHE_ENABLED is true
       //    and PARQUET_VECTORIZED_READER_ENABLED is true and WHOLESTAGE_CODEGEN_ENABLED is
@@ -97,44 +96,44 @@ object HadoopFsRelationOptimizer extends Logging {
           (relation, false)
         }
 
-      case a if relation.sparkSession.conf.get(OapConf.OAP_ORC_ENABLED) &&
-        (a.isInstanceOf[org.apache.spark.sql.hive.orc.OrcFileFormat] ||
-          a.isInstanceOf[org.apache.spark.sql.execution.datasources.orc.OrcFileFormat]) =>
-        val optimizedOrcFileFormat = new OptimizedOrcFileFormat
-        optimizedOrcFileFormat
-          .init(relation.sparkSession,
-            relation.options,
-            selectedPartitions.flatMap(p => p.files))
-
-        def canUseCache: Boolean = {
-          val runtimeConf = relation.sparkSession.conf
-          val cacheEnabled = runtimeConf.get(OapConf.OAP_ORC_DATA_CACHE_ENABLED)
-          logDebug(s"config - ${OapConf.OAP_ORC_DATA_CACHE_ENABLED.key} is $cacheEnabled")
-          val ret = cacheEnabled && runtimeConf.get(SQLConf.ORC_VECTORIZED_READER_ENABLED) &&
-            runtimeConf.get(SQLConf.WHOLESTAGE_CODEGEN_ENABLED) &&
-            runtimeConf.get(SQLConf.ORC_COPY_BATCH_TO_SPARK) &&
-            outputSchema.forall(_.dataType.isInstanceOf[AtomicType])
-          if (ret) {
-            logInfo("data cache enable and suitable for use , " +
-              "will replace with optimizedOrcFileFormat.")
-          }
-          ret
-        }
-
-
-        if (optimizedOrcFileFormat.hasAvailableIndex(dataFilters) || canUseCache) {
-          logInfo("hasAvailableIndex or enable cache, will replace with optimizedOrcFileFormat.")
-          val orcOptions: Map[String, String] =
-            Map(SQLConf.ORC_FILTER_PUSHDOWN_ENABLED.key ->
-              relation.sparkSession.sessionState.conf.orcFilterPushDown.toString) ++
-              relation.options
-
-          (relation.copy(fileFormat = optimizedOrcFileFormat,
-            options = orcOptions)(relation.sparkSession), true)
-        } else {
-          logInfo("hasAvailableIndex = false, will retain OrcFileFormat.")
-          (relation, false)
-        }
+//      case a if relation.sparkSession.conf.get(OapConf.OAP_ORC_ENABLED) &&
+//        (a.isInstanceOf[org.apache.spark.sql.hive.orc.OrcFileFormat] ||
+//          a.isInstanceOf[org.apache.spark.sql.execution.datasources.orc.OrcFileFormat]) =>
+//        val optimizedOrcFileFormat = new OptimizedOrcFileFormat
+//        optimizedOrcFileFormat
+//          .init(relation.sparkSession,
+//            relation.options,
+//            selectedPartitions.flatMap(p => p.files))
+//
+//        def canUseCache: Boolean = {
+//          val runtimeConf = relation.sparkSession.conf
+//          val cacheEnabled = runtimeConf.get(OapConf.OAP_ORC_DATA_CACHE_ENABLED)
+//          logDebug(s"config - ${OapConf.OAP_ORC_DATA_CACHE_ENABLED.key} is $cacheEnabled")
+//          val ret = cacheEnabled && runtimeConf.get(SQLConf.ORC_VECTORIZED_READER_ENABLED) &&
+//            runtimeConf.get(SQLConf.WHOLESTAGE_CODEGEN_ENABLED) &&
+//            runtimeConf.get(SQLConf.ORC_COPY_BATCH_TO_SPARK) &&
+//            outputSchema.forall(_.dataType.isInstanceOf[AtomicType])
+//          if (ret) {
+//            logInfo("data cache enable and suitable for use , " +
+//              "will replace with optimizedOrcFileFormat.")
+//          }
+//          ret
+//        }
+//
+//
+//        if (optimizedOrcFileFormat.hasAvailableIndex(dataFilters) || canUseCache) {
+//          logInfo("hasAvailableIndex or enable cache, will replace with optimizedOrcFileFormat.")
+//          val orcOptions: Map[String, String] =
+//            Map(SQLConf.ORC_FILTER_PUSHDOWN_ENABLED.key ->
+//              relation.sparkSession.sessionState.conf.orcFilterPushDown.toString) ++
+//              relation.options
+//
+//          (relation.copy(fileFormat = optimizedOrcFileFormat,
+//            options = orcOptions)(relation.sparkSession), true)
+//        } else {
+//          logInfo("hasAvailableIndex = false, will retain OrcFileFormat.")
+//          (relation, false)
+//        }
 
       case _: OapFileFormat =>
         relation.fileFormat.asInstanceOf[OapFileFormat].init(

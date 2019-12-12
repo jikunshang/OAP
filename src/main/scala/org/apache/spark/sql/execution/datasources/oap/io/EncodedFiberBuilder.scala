@@ -18,6 +18,7 @@
 package org.apache.spark.sql.execution.datasources.oap.io
 
 import org.apache.parquet.bytes.BytesInput
+import org.apache.parquet.bytes.DirectByteBufferAllocator
 import org.apache.parquet.column.values.deltastrings.DeltaByteArrayWriter
 import org.apache.parquet.column.values.dictionary.DictionaryValuesWriter.{PlainBinaryDictionaryValuesWriter, PlainIntegerDictionaryValuesWriter}
 import org.apache.parquet.format.Encoding
@@ -34,7 +35,8 @@ private[oap] case class DeltaByteArrayFiberBuilder (
     dataType: DataType) extends DataFiberBuilder {
 
   // TODO: [linhong] hard-coded variables need to remove
-  private val valuesWriter = new DeltaByteArrayWriter(32, 1048576)
+  val allocator = new DirectByteBufferAllocator()
+  private val valuesWriter = new DeltaByteArrayWriter(32, 1048576, allocator)
   private var dataLengthInBytes: Int = _
 
   override def getEncoding: Encoding = Encoding.DELTA_BYTE_ARRAY
@@ -77,10 +79,11 @@ private[oap] case class PlainBinaryDictionaryFiberBuilder(
     defaultRowGroupRowCount: Int,
     ordinal: Int,
     dataType: DataType) extends DataFiberBuilder {
-
+  private val allocator = new DirectByteBufferAllocator()
   private val valuesWriter = new PlainBinaryDictionaryValuesWriter(1048576,
     org.apache.parquet.column.Encoding.RLE_DICTIONARY,
-    org.apache.parquet.column.Encoding.PLAIN)
+    org.apache.parquet.column.Encoding.PLAIN,
+    allocator)
 
   private var dataLengthInBytes: Int = _
 
@@ -112,13 +115,15 @@ private[oap] case class PlainBinaryDictionaryFiberBuilder(
     FiberByteData(bytes)
   }
 
+  // FIXME
   override def buildDictionary: Array[Byte] = {
-    val dictionary = valuesWriter.createDictionaryPage()
-    if (dictionary != null) {
-      dictionary.getBytes.toByteArray
-    } else {
-      Array.empty[Byte]
-    }
+//    val dictionary = valuesWriter.createDictionaryPage()
+//    if (dictionary != null) {
+//      dictionary.getBytes.toByteArray
+//    } else {
+//      Array.empty[Byte]
+//    }
+    Array.empty[Byte]
   }
 
   override def getDictionarySize: Int = valuesWriter.getDictionarySize
@@ -135,9 +140,11 @@ private[oap] case class PlainIntegerDictionaryFiberBuilder(
     ordinal: Int,
     dataType: DataType) extends DataFiberBuilder {
 
+  val allocator = new DirectByteBufferAllocator()
   private val valuesWriter = new PlainIntegerDictionaryValuesWriter(1048576,
     org.apache.parquet.column.Encoding.RLE_DICTIONARY,
-    org.apache.parquet.column.Encoding.PLAIN)
+    org.apache.parquet.column.Encoding.PLAIN,
+    allocator)
 
   private var dataLengthInBytes: Int = _
 
@@ -166,13 +173,15 @@ private[oap] case class PlainIntegerDictionaryFiberBuilder(
     FiberByteData(bytes)
   }
 
+  // FixME
   override def buildDictionary: Array[Byte] = {
-    val dictionary = valuesWriter.createDictionaryPage()
-    if (dictionary != null) {
-      dictionary.getBytes.toByteArray
-    } else {
-      Array.empty[Byte]
-    }
+//    val dictionary = valuesWriter.createDictionaryPage()
+//    if (dictionary != null) {
+//      dictionary.getBytes.toByteArray
+//    } else {
+//      Array.empty[Byte]
+//    }
+    Array.empty[Byte]
   }
 
   override def getDictionarySize: Int = valuesWriter.getDictionarySize

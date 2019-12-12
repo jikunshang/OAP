@@ -27,6 +27,9 @@ import org.apache.parquet.io.api.Binary;
 
 import org.apache.spark.sql.execution.vectorized.WritableColumnVector;
 
+import java.io.IOException;
+import java.nio.ByteBuffer;
+
 /**
  * A values reader for Parquet's run-length encoded data. This is based off of the version in
  * parquet-mr with these changes:
@@ -46,6 +49,11 @@ public class VectorizedRleValuesReader extends ValuesReader
   protected enum MODE {
     RLE,
     PACKED
+  }
+
+  // todo: implement
+  public void initFromPage(int var1, ByteBuffer var2, int var3) throws IOException {
+    ;
   }
 
   // Encoded data.

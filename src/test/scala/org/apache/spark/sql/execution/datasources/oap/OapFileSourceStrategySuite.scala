@@ -189,13 +189,13 @@ class OapFileSourceStrategyForOrcSuite extends OapFileSourceStrategySuite {
 
   protected def fileFormat: String = "orc"
 
-  test("Project-> Filter -> Scan : Optimized") {
-    verifyProjectFilterScan(
-      indexColumn = "b",
-      format => format.isInstanceOf[OptimizedOrcFileFormat],
-      (plan1, plan2) => !plan1.sameResult(plan2)
-    )
-  }
+//  test("Project-> Filter -> Scan : Optimized") {
+//    verifyProjectFilterScan(
+//      indexColumn = "b",
+//      format => format.isInstanceOf[OptimizedOrcFileFormat],
+//      (plan1, plan2) => !plan1.sameResult(plan2)
+//    )
+//  }
 
   test("Project-> Filter -> Scan : Not Optimized") {
     verifyProjectFilterScan(

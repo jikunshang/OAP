@@ -403,7 +403,7 @@ private[sql] object OapFileFormat {
   val OAP_DATA_FILE_V1_CLASSNAME = classOf[OapDataFileV1].getCanonicalName
 
   val PARQUET_DATA_FILE_CLASSNAME = classOf[ParquetDataFile].getCanonicalName
-  val ORC_DATA_FILE_CLASSNAME = classOf[OrcDataFile].getCanonicalName
+//  val ORC_DATA_FILE_CLASSNAME = classOf[OrcDataFile].getCanonicalName
 
   val COMPRESSION = "oap.compression"
   val DEFAULT_COMPRESSION = OapConf.OAP_COMPRESSION.defaultValueString
