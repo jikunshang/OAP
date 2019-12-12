@@ -109,23 +109,16 @@ class NonEvictPMCache(dramSize: Long,
       fiberCache
     } else {
       cacheMissCount.getAndAdd(1)
-      if (cacheSize < pmSize) {
-        val fiberCache = cache(fiber)
-        incFiberCountAndSize(fiber, 1, fiberCache.size())
+      val fiberCache = cache(fiber)
+      fiberCache.occupy()
+      if (fiberCache.fiberData.source.equals("DRAM")) {
+        cacheGuardian.addRemovalFiber(fiber, fiberCache)
+      } else {
         _cacheSize.addAndGet(fiberCache.size())
         _cacheCount.addAndGet(1)
-        fiberCache.occupy()
         cacheMap.put(fiber, fiberCache)
-        fiberCache
-      } else {
-        val fiberCache = cache(fiber)
-        incFiberCountAndSize(fiber, 1, fiberCache.size())
-        fiberCache.occupy()
-        // We only use fiber for once, and CacheGuardian will dispose it after release.
-        cacheGuardian.addRemovalFiber(fiber, fiberCache)
-        decFiberCountAndSize(fiber, 1, fiberCache.size())
-        fiberCache
       }
+      fiberCache
     }
   }
 
