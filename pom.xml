@@ -262,6 +262,11 @@
     </dependency>
 
     <dependency>
+      <groupId>org.apache.arrow</groupId>
+      <artifactId>arrow-plasma</artifactId>
+      <version>0.15.0</version>
+    </dependency>
+    <dependency>
       <groupId>org.antlr</groupId>
       <artifactId>antlr4-runtime</artifactId>
       <version>${antlr.version}</version>

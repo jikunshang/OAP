@@ -122,6 +122,7 @@ private[sql] class FiberCacheManager(
   private val SIMPLE_CACHE = "simple"
   private val NO_EVICT_CACHE = "noevict"
   private val VMEM_CACHE = "vmem"
+  private val EXTERNAL_CACHE = "external"
   private val DEFAULT_CACHE_STRATEGY = VMEM_CACHE
 
   private var _dataCacheCompressEnable = sparkEnv.conf.get(
@@ -154,7 +155,10 @@ private[sql] class FiberCacheManager(
         memoryManager.cacheGuardianMemory)
     } else if (cacheName.equals(VMEM_CACHE)) {
       new VMemCache()
-    } else {
+    } else if (cacheName.equals(EXTERNAL_CACHE)) {
+      new ExternalCache()
+    }
+    else {
       throw new OapException(s"Unsupported cache strategy $cacheName")
     }
   }
