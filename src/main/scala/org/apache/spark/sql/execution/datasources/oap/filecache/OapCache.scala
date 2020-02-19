@@ -641,9 +641,14 @@ class ExternalCache extends OapCache with Logging {
   }
 
   def contains(fiberId: FiberId): Boolean = {
+    var ret : Boolean = false;
+    val startTime = System.currentTimeMillis()
     val objectId = hash(fiberId.toString)
-    if (plasmaClinentPool(clientRoundRobin.getAndAdd(1) % clientPoolSize).contains(objectId)) true
-    else false
+    if (plasmaClinentPool(clientRoundRobin.getAndAdd(1) % clientPoolSize).contains(objectId)) {
+      ret = true
+    } else ret = false
+    logWarning(s"Contain takes ${System.currentTimeMillis() - startTime} ms")
+    ret
   }
 
   override def get(fiberId: FiberId): FiberCache = {
