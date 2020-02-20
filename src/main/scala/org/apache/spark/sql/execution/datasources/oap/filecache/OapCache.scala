@@ -845,14 +845,22 @@ class ExternalCache extends OapCache with Logging {
     logDebug(s"external cache get FiberId is ${fiberId}")
     val objectId = hash(fiberId.toString)
     if(contains(fiberId)) {
-      logDebug(s"Cache hit, get from external cache.")
-      val plasmaClient = plasmaClinentPool(clientRoundRobin.getAndAdd(1) % clientPoolSize)
-      val buf: ByteBuffer = plasmaClient.getByteBuffer(objectId, -1, false)
-      val fiberCache = emptyDataFiber(buf.capacity())
-      fiberCache.fiberId = fiberId
-      Platform.copyMemory(null, buf.asInstanceOf[DirectBuffer].address(),
-        null, fiberCache.fiberData.baseOffset, buf.capacity())
-      plasmaClient.release(objectId)
+      var fiberCache : FiberCache = null
+      try{
+        logDebug(s"Cache hit, get from external cache.")
+        val plasmaClient = plasmaClinentPool(clientRoundRobin.getAndAdd(1) % clientPoolSize)
+        val buf: ByteBuffer = plasmaClient.getByteBuffer(objectId, -1, false)
+        fiberCache = emptyDataFiber(buf.capacity())
+        fiberCache.fiberId = fiberId
+        Platform.copyMemory(null, buf.asInstanceOf[DirectBuffer].address(),
+          null, fiberCache.fiberData.baseOffset, buf.capacity())
+        plasmaClient.release(objectId)
+      }
+      catch {
+        case getException : plasma.exceptions.PlasmaGetException =>
+          logWarning("Get exception: " + getException.getMessage)
+          fiberCache = cache(fiberId)
+      }
       fiberCache.occupy()
       cacheGuardian.addRemovalFiber(fiberId, fiberCache)
       fiberCache
