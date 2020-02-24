@@ -873,7 +873,15 @@ class ExternalCache(fiberType: FiberType) extends OapCache with Logging {
   }
   init()
 
+  private val cacheHitCount: AtomicLong = new AtomicLong(0)
+  private val cacheMissCount: AtomicLong = new AtomicLong(0)
+  private val cacheTotalGetTime: AtomicLong = new AtomicLong(0)
+  private var cacheTotalCount: Long = 0
+  private var cacheEvictCount: Long = 0
+  private var cacheTotalSize: Long = 0
+
   // TODO Make it configurable
+  var fiberSet = scala.collection.mutable.Set[FiberId]()
   val clientPoolSize = conf.get(OapConf.OAP_EXTERNAL_CACHE_CLIENT_POOL_SIZE)
   val clientRoundRobin = new AtomicInteger(0)
   val plasmaClinentPool = new Array[ plasma.PlasmaClient](clientPoolSize)
@@ -885,7 +893,7 @@ class ExternalCache(fiberType: FiberType) extends OapCache with Logging {
   cacheGuardian.start()
   logDebug("plasma client start")
 
-  val  hf: HashFunction = Hashing.murmur3_128()
+  val hf: HashFunction = Hashing.murmur3_128()
 
   def hash(key: Array[Byte]): Array[Byte] = {
     val ret = new Array[Byte](20)
@@ -917,6 +925,7 @@ class ExternalCache(fiberType: FiberType) extends OapCache with Logging {
         logDebug(s"Cache hit, get from external cache.")
         val plasmaClient = plasmaClinentPool(clientRoundRobin.getAndAdd(1) % clientPoolSize)
         val buf: ByteBuffer = plasmaClient.getByteBuffer(objectId, -1, false)
+        cacheHitCount.addAndGet(1)
         fiberCache = emptyDataFiber(buf.capacity())
         fiberCache.fiberId = fiberId
         Platform.copyMemory(null, buf.asInstanceOf[DirectBuffer].address(),
@@ -927,12 +936,15 @@ class ExternalCache(fiberType: FiberType) extends OapCache with Logging {
         case getException : plasma.exceptions.PlasmaGetException =>
           logWarning("Get exception: " + getException.getMessage)
           fiberCache = cache(fiberId)
+          cacheMissCount.addAndGet(1)
       }
       fiberCache.occupy()
       cacheGuardian.addRemovalFiber(fiberId, fiberCache)
       fiberCache
     } else {
       val fiberCache = cache(fiberId)
+      cacheMissCount.addAndGet(1)
+      fiberSet.add(fiberId)
       fiberCache.occupy()
       cacheGuardian.addRemovalFiber(fiberId, fiberCache)
       fiberCache
@@ -960,7 +972,18 @@ class ExternalCache(fiberType: FiberType) extends OapCache with Logging {
   override def getIfPresent(fiber: FiberId): FiberCache = null
 
   override def getFibers: Set[FiberId] = {
-    Set.empty
+    // contains or list
+    // contains: prefetch
+    // list: return a byte[][], and convert to a hash map and lookup
+    // and can not convert hash to fiberId string.
+    val list : Array[Array[Byte]] =
+    plasmaClinentPool(clientRoundRobin.getAndAdd(1) % clientPoolSize).list();
+    cacheTotalCount = list.length
+    logDebug("cache total size is " + cacheTotalCount)
+    list.toSet
+    fiberSet.foreach( fiber =>
+      if ( !list.contains(hash(fiber.toFiberKey()))) fiberSet.remove(fiber) )
+    fiberSet.toSet
   }
 
   override def invalidate(fiber: FiberId): Unit = { }
@@ -971,11 +994,33 @@ class ExternalCache(fiberType: FiberType) extends OapCache with Logging {
 
   override def cacheCount: Long = 0
 
-  override def cacheStats: CacheStats = CacheStats()
+//  override def cacheStats: CacheStats = CacheStats()
+  override def cacheStats: CacheStats = {
+    var array = new Array[Long](4)
+    plasmaClinentPool(clientRoundRobin.getAndAdd(1) % clientPoolSize).metrics(array)
+    cacheTotalSize = array(3)
+    logWarning(" total vmemcache size is " + cacheTotalSize )
+    CacheStats(
+      cacheTotalCount, // dataFiberCount
+      cacheTotalSize, // dataFiberSize JNIGet
+      0, // indexFiberCount
+      0, // indexFiberSize
+      cacheGuardian.pendingFiberCount, // pendingFiberCount
+      cacheGuardian.pendingFiberSize, // pendingFiberSize
+      cacheHitCount.get(), // dataFiberHitCount
+      cacheMissCount.get(), // dataFiberMissCount
+      cacheHitCount.get(), // dataFiberLoadCount
+      cacheTotalGetTime.get(), // dataTotalLoadTime
+      cacheEvictCount, // dataEvictionCount
+      0, // indexFiberHitCount
+      0, // indexFiberMissCount
+      0, // indexFiberLoadCount
+      0, // indexFiberLoadTime
+      0) // indexEvictionCount JNIGet
+  }
 
   override def pendingFiberCount: Int = {
-    0
-    //    cacheGuardian.pendingFiberCount
+    cacheGuardian.pendingFiberCount
   }
 
   override def dataCacheCount: Long = 0
