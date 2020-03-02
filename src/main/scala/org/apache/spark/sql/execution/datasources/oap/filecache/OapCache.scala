@@ -24,12 +24,11 @@ import java.util.concurrent.atomic.{AtomicInteger, AtomicLong}
 import java.util.concurrent.locks.{Condition, ReentrantLock}
 
 import scala.collection.JavaConverters._
-
 import com.google.common.cache._
 import com.google.common.hash._
 import org.apache.arrow.plasma
+import org.apache.arrow.plasma.exceptions.{DuplicateObjectException, PlasmaClientException}
 import sun.nio.ch.DirectBuffer
-
 import org.apache.spark.{SparkEnv, SparkException}
 import org.apache.spark.internal.Logging
 import org.apache.spark.internal.config.ConfigEntry
@@ -958,11 +957,16 @@ class ExternalCache(fiberType: FiberType) extends OapCache with Logging {
     val objectId = hash(fiberId.toString)
     if( !contains(fiberId)) {
       val plasmaClient = plasmaClinentPool(clientRoundRobin.getAndAdd(1) % clientPoolSize)
-      val buf = plasmaClient.create(objectId, fiber.size().toInt)
-      Platform.copyMemory(null, fiber.fiberData.baseOffset,
-        null, buf.asInstanceOf[DirectBuffer].address(), fiber.size())
-      plasmaClient.seal(objectId)
-      plasmaClient.release(objectId)
+      try {
+        val buf = plasmaClient.create(objectId, fiber.size().toInt)
+        Platform.copyMemory(null, fiber.fiberData.baseOffset,
+          null, buf.asInstanceOf[DirectBuffer].address(), fiber.size())
+        plasmaClient.seal(objectId)
+        plasmaClient.release(objectId)
+      } catch {
+        case e: DuplicateObjectException => logWarning(e.getMessage)
+      }
+
     }
     fiber
   }
@@ -998,7 +1002,7 @@ class ExternalCache(fiberType: FiberType) extends OapCache with Logging {
   override def cacheStats: CacheStats = {
     var array = new Array[Long](4)
     plasmaClinentPool(clientRoundRobin.getAndAdd(1) % clientPoolSize).metrics(array)
-    cacheTotalSize = array(3)
+    cacheTotalSize = array(3) + array(1) // Memory store and external store used size
     logWarning(" total vmemcache size is " + cacheTotalSize )
     CacheStats(
       cacheTotalCount, // dataFiberCount
