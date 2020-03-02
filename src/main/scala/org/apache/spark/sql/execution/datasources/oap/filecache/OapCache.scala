@@ -24,11 +24,13 @@ import java.util.concurrent.atomic.{AtomicInteger, AtomicLong}
 import java.util.concurrent.locks.{Condition, ReentrantLock}
 
 import scala.collection.JavaConverters._
+
 import com.google.common.cache._
 import com.google.common.hash._
 import org.apache.arrow.plasma
 import org.apache.arrow.plasma.exceptions.{DuplicateObjectException, PlasmaClientException}
 import sun.nio.ch.DirectBuffer
+
 import org.apache.spark.{SparkEnv, SparkException}
 import org.apache.spark.internal.Logging
 import org.apache.spark.internal.config.ConfigEntry
@@ -858,16 +860,15 @@ class ExternalCache(fiberType: FiberType) extends OapCache with Logging {
     OapRuntime.getOrCreate.fiberCacheManager.getEmptyDataFiberCache(fiberLength)
   private val conf = SparkEnv.get.conf
   private val externalStoreCacheSocket: String = "/tmp/plasmaStore"
-//    conf.get(OapConf.OAP_FIBERCACHE_EXTERNAL_STORE_PATH.key, "/tmp/plasmaStore")
   private var cacheInit: Boolean = false
   def init(): Unit = {
     if (!cacheInit) {
       try {
         System.loadLibrary("plasma_java")
+        cacheInit = true
       } catch {
         case e: Exception => logError(s"load plasma jni lib failed " + e.getMessage)
       }
-      cacheInit = true
     }
   }
   init()
@@ -879,13 +880,15 @@ class ExternalCache(fiberType: FiberType) extends OapCache with Logging {
   private var cacheEvictCount: Long = 0
   private var cacheTotalSize: Long = 0
 
-  // TODO Make it configurable
+  private def emptyDataFiber(fiberLength: Long): FiberCache =
+    OapRuntime.getOrCreate.fiberCacheManager.getEmptyDataFiberCache(fiberLength)
+
   var fiberSet = scala.collection.mutable.Set[FiberId]()
   val clientPoolSize = conf.get(OapConf.OAP_EXTERNAL_CACHE_CLIENT_POOL_SIZE)
   val clientRoundRobin = new AtomicInteger(0)
-  val plasmaClinentPool = new Array[ plasma.PlasmaClient](clientPoolSize)
+  val plasmaClientPool = new Array[ plasma.PlasmaClient](clientPoolSize)
   for ( i <- 0 until clientPoolSize) {
-    plasmaClinentPool(i) = new plasma.PlasmaClient(externalStoreCacheSocket, "", 0)
+    plasmaClientPool(i) = new plasma.PlasmaClient(externalStoreCacheSocket, "", 0)
   }
 
   val cacheGuardian = new CacheGuardian(10000000000L)
@@ -906,12 +909,12 @@ class ExternalCache(fiberType: FiberType) extends OapCache with Logging {
   def delete(fiberId: FiberId): Unit = {
     //    val objectId = fiberId.toString.getBytes()
     val objectId = hash(fiberId.toString)
-    plasmaClinentPool(clientRoundRobin.getAndAdd(1) % clientPoolSize).delete(objectId)
+    plasmaClientPool(clientRoundRobin.getAndAdd(1) % clientPoolSize).delete(objectId)
   }
 
   def contains(fiberId: FiberId): Boolean = {
     val objectId = hash(fiberId.toString)
-    if (plasmaClinentPool(clientRoundRobin.getAndAdd(1) % clientPoolSize).contains(objectId)) true
+    if (plasmaClientPool(clientRoundRobin.getAndAdd(1) % clientPoolSize).contains(objectId)) true
     else false
   }
 
@@ -922,7 +925,7 @@ class ExternalCache(fiberType: FiberType) extends OapCache with Logging {
       var fiberCache : FiberCache = null
       try{
         logDebug(s"Cache hit, get from external cache.")
-        val plasmaClient = plasmaClinentPool(clientRoundRobin.getAndAdd(1) % clientPoolSize)
+        val plasmaClient = plasmaClientPool(clientRoundRobin.getAndAdd(1) % clientPoolSize)
         val buf: ByteBuffer = plasmaClient.getByteBuffer(objectId, -1, false)
         cacheHitCount.addAndGet(1)
         fiberCache = emptyDataFiber(buf.capacity())
@@ -956,7 +959,7 @@ class ExternalCache(fiberType: FiberType) extends OapCache with Logging {
 
     val objectId = hash(fiberId.toString)
     if( !contains(fiberId)) {
-      val plasmaClient = plasmaClinentPool(clientRoundRobin.getAndAdd(1) % clientPoolSize)
+      val plasmaClient = plasmaClientPool(clientRoundRobin.getAndAdd(1) % clientPoolSize)
       try {
         val buf = plasmaClient.create(objectId, fiber.size().toInt)
         Platform.copyMemory(null, fiber.fiberData.baseOffset,
@@ -981,7 +984,7 @@ class ExternalCache(fiberType: FiberType) extends OapCache with Logging {
     // list: return a byte[][], and convert to a hash map and lookup
     // and can not convert hash to fiberId string.
     val list : Array[Array[Byte]] =
-    plasmaClinentPool(clientRoundRobin.getAndAdd(1) % clientPoolSize).list();
+    plasmaClientPool(clientRoundRobin.getAndAdd(1) % clientPoolSize).list();
     cacheTotalCount = list.length
     logDebug("cache total size is " + cacheTotalCount)
     list.toSet
@@ -998,10 +1001,9 @@ class ExternalCache(fiberType: FiberType) extends OapCache with Logging {
 
   override def cacheCount: Long = 0
 
-//  override def cacheStats: CacheStats = CacheStats()
   override def cacheStats: CacheStats = {
     var array = new Array[Long](4)
-    plasmaClinentPool(clientRoundRobin.getAndAdd(1) % clientPoolSize).metrics(array)
+    plasmaClientPool(clientRoundRobin.getAndAdd(1) % clientPoolSize).metrics(array)
     cacheTotalSize = array(3) + array(1) // Memory store and external store used size
     logWarning(" total vmemcache size is " + cacheTotalSize )
     CacheStats(
