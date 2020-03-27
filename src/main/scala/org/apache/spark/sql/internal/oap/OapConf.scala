@@ -415,6 +415,13 @@ object OapConf {
       .stringConf
       .createWithDefault("10g")
 
+  val OAP_CACHE_GUARDIAN_RETRY_TIME =
+    SqlConfAdapter.buildConf("spark.sql.oap.cache.guardian.retry.time")
+    .internal()
+    .doc("Retry time for TmpMemoryManager allocate")
+    .intConf
+    .createWithDefault(100)
+
   val OAP_INDEX_STATISTIC_EXTERNALSORTER_ENABLE =
     SqlConfAdapter.buildConf("spark.sql.oap.index.statistic.externalsorter.enable")
       .internal()

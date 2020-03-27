@@ -169,6 +169,7 @@ private[filecache] class TmpDramMemoryManager(sparkEnv: SparkEnv)
     sparkEnv.conf.get(OapConf.OAP_CACHE_GUARDIAN_MEMORY_SIZE)
   val cacheGuardianMemory = Utils.byteStringAsBytes(cacheGuardianMemorySizeStr)
   logInfo(s"cacheGuardian total use $cacheGuardianMemory bytes memory")
+  val cacheGuardianRetryTime: Int = sparkEnv.conf.get(OapConf.OAP_CACHE_GUARDIAN_RETRY_TIME)
 
   private val _memoryUsed = new AtomicLong(0)
   override def memoryUsed: Long = _memoryUsed.get()
@@ -179,8 +180,9 @@ private[filecache] class TmpDramMemoryManager(sparkEnv: SparkEnv)
     while(memoryUsed + size > cacheGuardianMemory) {
       retryTime += 1
       Thread.sleep(10)
-      if (retryTime > 100) {
-        throw new OapException("cache guardian use too much memory over 1000 ms," +
+      if (retryTime > cacheGuardianRetryTime) {
+        throw new OapException("cache guardian use too much memory over " +
+          cacheGuardianRetryTime * 10 + "ms," +
           " please consider increase cache guardian size")
       }
     }
