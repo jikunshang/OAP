@@ -175,8 +175,14 @@ private[filecache] class TmpDramMemoryManager(sparkEnv: SparkEnv)
   override def memorySize: Long = cacheGuardianMemory
 
   override private[filecache] def allocate(size: Long): MemoryBlockHolder = {
-    if (memoryUsed + size > cacheGuardianMemory) {
-      throw new OapException("cache guardian use too much memory")
+    var retryTime: Int = 0
+    while(memoryUsed + size > cacheGuardianMemory) {
+      retryTime += 1
+      Thread.sleep(10)
+      if (retryTime > 150) {
+        throw new OapException("cache guardian use too much memory over 1000 ms," +
+          " please consider increase cache guardian size")
+      }
     }
     val startTime = System.currentTimeMillis()
     val occupiedSize = size
