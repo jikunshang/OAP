@@ -415,8 +415,8 @@ object OapConf {
       .stringConf
       .createWithDefault("10g")
 
-  val OAP_CACHE_GUARDIAN_RETRY_TIME =
-    SqlConfAdapter.buildConf("spark.sql.oap.cache.guardian.retry.time")
+  val OAP_CACHE_GUARDIAN_RETRY_TIME_IN_MS =
+    SqlConfAdapter.buildConf("spark.sql.oap.cache.guardian.retry.time.in.ms")
     .internal()
     .doc("Retry time for TmpMemoryManager allocate")
     .intConf

@@ -169,7 +169,7 @@ private[filecache] class TmpDramMemoryManager(sparkEnv: SparkEnv)
     sparkEnv.conf.get(OapConf.OAP_CACHE_GUARDIAN_MEMORY_SIZE)
   val cacheGuardianMemory = Utils.byteStringAsBytes(cacheGuardianMemorySizeStr)
   logInfo(s"cacheGuardian total use $cacheGuardianMemory bytes memory")
-  val cacheGuardianRetryTime: Int = sparkEnv.conf.get(OapConf.OAP_CACHE_GUARDIAN_RETRY_TIME)
+  val cacheGuardianRetryTime = sparkEnv.conf.get(OapConf.OAP_CACHE_GUARDIAN_RETRY_TIME_IN_MS) / 10
 
   private val _memoryUsed = new AtomicLong(0)
   override def memoryUsed: Long = _memoryUsed.get()
