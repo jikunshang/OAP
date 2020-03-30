@@ -169,7 +169,9 @@ private[filecache] class TmpDramMemoryManager(sparkEnv: SparkEnv)
     sparkEnv.conf.get(OapConf.OAP_CACHE_GUARDIAN_MEMORY_SIZE)
   val cacheGuardianMemory = Utils.byteStringAsBytes(cacheGuardianMemorySizeStr)
   logInfo(s"cacheGuardian total use $cacheGuardianMemory bytes memory")
-  val cacheGuardianRetryTime = sparkEnv.conf.get(OapConf.OAP_CACHE_GUARDIAN_RETRY_TIME_IN_MS) / 10
+  val cacheGuardianRetrySleepTimeInMs = 10
+  val cacheGuardianRetryTime =
+    sparkEnv.conf.get(OapConf.OAP_CACHE_GUARDIAN_RETRY_TIME_IN_MS) / cacheGuardianRetrySleepTimeInMs
 
   private val _memoryUsed = new AtomicLong(0)
   override def memoryUsed: Long = _memoryUsed.get()
@@ -179,11 +181,12 @@ private[filecache] class TmpDramMemoryManager(sparkEnv: SparkEnv)
     var retryTime: Int = 0
     while(memoryUsed + size > cacheGuardianMemory) {
       retryTime += 1
-      Thread.sleep(10)
+      Thread.sleep(cacheGuardianRetrySleepTimeInMs)
       if (retryTime > cacheGuardianRetryTime) {
         throw new OapException("cache guardian use too much memory over " +
-          cacheGuardianRetryTime * 10 + "ms," +
-          " please consider increase cache guardian size")
+          cacheGuardianRetryTime * cacheGuardianRetrySleepTimeInMs + "ms, please consider " +
+          "increase memory size by 'spark.sql.oap.cache.guardian.memory.size' configuration or " +
+          "increase retry time by 'spark.sql.oap.cache.guardian.retry.time.in.ms' configuration")
       }
     }
     val startTime = System.currentTimeMillis()
