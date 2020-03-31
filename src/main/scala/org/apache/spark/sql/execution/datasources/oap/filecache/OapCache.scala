@@ -856,8 +856,6 @@ class MixCache(dataCacheMemory: Long,
 }
 
 class ExternalCache(fiberType: FiberType) extends OapCache with Logging {
-  private def emptyDataFiber(fiberLength: Long): FiberCache =
-    OapRuntime.getOrCreate.fiberCacheManager.getEmptyDataFiberCache(fiberLength)
   private val conf = SparkEnv.get.conf
   private val externalStoreCacheSocket: String = "/tmp/plasmaStore"
   private var cacheInit: Boolean = false
@@ -891,9 +889,8 @@ class ExternalCache(fiberType: FiberType) extends OapCache with Logging {
     plasmaClientPool(i) = new plasma.PlasmaClient(externalStoreCacheSocket, "", 0)
   }
 
-  val cacheGuardian = new CacheGuardian(10000000000L)
+  val cacheGuardian = new MultiThreadCacheGuardian(Int.MaxValue)
   cacheGuardian.start()
-  logDebug("plasma client start")
 
   val hf: HashFunction = Hashing.murmur3_128()
 
@@ -902,12 +899,12 @@ class ExternalCache(fiberType: FiberType) extends OapCache with Logging {
     hf.newHasher().putBytes(key).hash().writeBytesTo(ret, 0, 20)
     ret
   }
+
   def hash(key: String): Array[Byte] = {
     hash(key.getBytes())
   }
 
   def delete(fiberId: FiberId): Unit = {
-    //    val objectId = fiberId.toString.getBytes()
     val objectId = hash(fiberId.toString)
     plasmaClientPool(clientRoundRobin.getAndAdd(1) % clientPoolSize).delete(objectId)
   }
@@ -969,7 +966,6 @@ class ExternalCache(fiberType: FiberType) extends OapCache with Logging {
       } catch {
         case e: DuplicateObjectException => logWarning(e.getMessage)
       }
-
     }
     fiber
   }
@@ -979,10 +975,6 @@ class ExternalCache(fiberType: FiberType) extends OapCache with Logging {
   override def getIfPresent(fiber: FiberId): FiberCache = null
 
   override def getFibers: Set[FiberId] = {
-    // contains or list
-    // contains: prefetch
-    // list: return a byte[][], and convert to a hash map and lookup
-    // and can not convert hash to fiberId string.
     val list : Array[Array[Byte]] =
     plasmaClientPool(clientRoundRobin.getAndAdd(1) % clientPoolSize).list();
     cacheTotalCount = list.length
@@ -1002,27 +994,36 @@ class ExternalCache(fiberType: FiberType) extends OapCache with Logging {
   override def cacheCount: Long = 0
 
   override def cacheStats: CacheStats = {
-    var array = new Array[Long](4)
+    val array = new Array[Long](4)
     plasmaClientPool(clientRoundRobin.getAndAdd(1) % clientPoolSize).metrics(array)
     cacheTotalSize = array(3) + array(1) // Memory store and external store used size
-    logWarning(" total vmemcache size is " + cacheTotalSize )
-    CacheStats(
-      cacheTotalCount, // dataFiberCount
-      cacheTotalSize, // dataFiberSize JNIGet
-      0, // indexFiberCount
-      0, // indexFiberSize
-      cacheGuardian.pendingFiberCount, // pendingFiberCount
-      cacheGuardian.pendingFiberSize, // pendingFiberSize
-      cacheHitCount.get(), // dataFiberHitCount
-      cacheMissCount.get(), // dataFiberMissCount
-      cacheHitCount.get(), // dataFiberLoadCount
-      cacheTotalGetTime.get(), // dataTotalLoadTime
-      cacheEvictCount, // dataEvictionCount
-      0, // indexFiberHitCount
-      0, // indexFiberMissCount
-      0, // indexFiberLoadCount
-      0, // indexFiberLoadTime
-      0) // indexEvictionCount JNIGet
+
+    if (fiberType == FiberType.INDEX) {
+      CacheStats(
+        0, 0,
+        cacheTotalCount, cacheTotalSize,
+        cacheGuardian.pendingFiberCount, // pendingFiberCount
+        cacheGuardian.pendingFiberSize, // pendingFiberSize
+        0, 0, 0, 0, 0, // For index cache, the data fiber metrics should always be zero
+        cacheHitCount.get(), // indexFiberHitCount
+        cacheMissCount.get(), // indexFiberMissCount
+        cacheHitCount.get(), // indexFiberLoadCount
+        cacheTotalGetTime.get(), // indexTotalLoadTime
+        cacheEvictCount // indexEvictionCount
+      )
+    } else {
+      CacheStats(
+        cacheTotalCount, cacheTotalSize,
+        0, 0,
+        cacheGuardian.pendingFiberCount, // pendingFiberCount
+        cacheGuardian.pendingFiberSize, // pendingFiberSize
+        cacheHitCount.get(), // dataFiberHitCount
+        cacheMissCount.get(), // dataFiberMissCount
+        cacheHitCount.get(), // dataFiberLoadCount
+        cacheTotalGetTime.get(), // dataTotalLoadTime
+        cacheEvictCount, // dataEvictionCount
+        0, 0, 0, 0, 0) // For data cache, the index fiber metrics should always be zero
+    }
   }
 
   override def pendingFiberCount: Int = {
