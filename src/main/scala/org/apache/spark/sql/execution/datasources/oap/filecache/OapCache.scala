@@ -226,6 +226,7 @@ private[filecache] object OapCache {
       case "vmem" => new VMemCache(fiberType)
       case "simple" => new SimpleOapCache()
       case "noevict" => new NonEvictPMCache(cacheMemory, cacheGuardianMemory, fiberType)
+      case "external" => new ExternalCache(fiberType)
       case _ => throw new UnsupportedOperationException(
         s"The cache backend: ${oapCacheOpt} is not supported now")
     }
@@ -853,7 +854,7 @@ class MixCache(dataCacheMemory: Long,
   }
 }
 
-class ExternalCache extends OapCache with Logging {
+class ExternalCache(fiberType: FiberType) extends OapCache with Logging {
   private def emptyDataFiber(fiberLength: Long): FiberCache =
     OapRuntime.getOrCreate.fiberCacheManager.getEmptyDataFiberCache(fiberLength)
   private val conf = SparkEnv.get.conf

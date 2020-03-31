@@ -84,7 +84,7 @@ private[sql] class FiberCacheManager(
     } else if (cacheName.equals(VMEM_CACHE)) {
       new VMemCache(FiberType.DATA)
     } else if (cacheName.equals(EXTERNAL_CACHE)) {
-      new ExternalCache()
+      new ExternalCache(FiberType.DATA)
     } else if (cacheName.equals(MIX_CACHE)) {
       val separateCache = sparkEnv.conf.getBoolean(
         OapConf.OAP_INDEX_DATA_SEPARATION_ENABLE.key,
